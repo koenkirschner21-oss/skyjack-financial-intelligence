@@ -137,10 +137,10 @@ export const OperatingEarningsWaterfallChart: React.FC<WaterfallChartProps> = ({
   const maxVal = maxRaw * 1.14;
 
   const width = visibleBars.length <= 8 ? 820 : 980;
-  const height = 355;
+  const height = 292;
   const padLeft = 72;
   const padRight = 24;
-  const padTop = 30;
+  const padTop = 16;
   const padBottom = 86;
   const innerW = width - padLeft - padRight;
   const innerH = height - padTop - padBottom;
@@ -174,41 +174,6 @@ export const OperatingEarningsWaterfallChart: React.FC<WaterfallChartProps> = ({
 
   return (
     <div className="space-y-3">
-      {/* Legend */}
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#5F6368]">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-xs bg-[#231F20] inline-block" />
-            Starting OE
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-xs bg-[#16A34A] inline-block" />
-            Favorable
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-xs bg-[#DC2626] inline-block" />
-            Adverse
-          </span>
-          {materialOnly && (
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-xs bg-[#64748B] inline-block" />
-              Grouped Minor (&lt; $1M)
-            </span>
-          )}
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-xs bg-[#E53C2E] inline-block" />
-            Ending OE (Q3 2026)
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-xs border-2 border-[#231F20] bg-white inline-block" />
-            Material (≥ CAD 1.0M)
-          </span>
-        </div>
-        <span className="text-[11px] text-[#5F6368] font-mono">
-          {visibleBars.length} steps shown · Exact net bridge
-        </span>
-      </div>
-
       <div className="overflow-x-auto border border-[#ECEEF0] rounded bg-[#FCFCFD] px-2 pt-2 pb-1">
         <svg
           viewBox={`0 0 ${width} ${height}`}
@@ -366,6 +331,40 @@ export const OperatingEarningsWaterfallChart: React.FC<WaterfallChartProps> = ({
             );
           })}
         </svg>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#5F6368]">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-xs bg-[#231F20] inline-block" />
+            Starting OE
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-xs bg-[#16A34A] inline-block" />
+            Favorable
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-xs bg-[#DC2626] inline-block" />
+            Adverse
+          </span>
+          {materialOnly && (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-xs bg-[#64748B] inline-block" />
+              Grouped Minor (&lt; $1M)
+            </span>
+          )}
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-xs bg-[#E53C2E] inline-block" />
+            Ending OE (Q3 2026)
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-xs border-2 border-[#231F20] bg-white inline-block" />
+            Material (≥ CAD 1.0M)
+          </span>
+        </div>
+        <span className="text-[11px] text-[#5F6368] font-mono">
+          {visibleBars.length} steps shown · Exact net bridge
+        </span>
       </div>
 
       {/* Persistent Active / Hovered Step Summary Bar */}

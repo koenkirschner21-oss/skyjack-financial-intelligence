@@ -36,6 +36,7 @@ export const AskSkyjackModal: React.FC = () => {
     activeUser,
     askModalOpen,
     setAskModalOpen,
+    askPromptSeed,
     openRecordById,
     navigate,
     recordAiAuditEvent,
@@ -49,6 +50,11 @@ export const AskSkyjackModal: React.FC = () => {
   const abortRef = useRef<AbortController | null>(null);
   const scrollEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!askModalOpen || !askPromptSeed) return;
+    setQuestionInput(askPromptSeed);
+  }, [askModalOpen, askPromptSeed]);
 
   useEffect(() => {
     if (!askModalOpen) return;
@@ -259,7 +265,7 @@ export const AskSkyjackModal: React.FC = () => {
               <div className="space-y-2">
                 <div className="text-[11px] font-medium text-[#5F6368]">Suggested questions</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {SUGGESTED_QUESTIONS.map((q) => (
+                  {(askPromptSeed ? [askPromptSeed, ...SUGGESTED_QUESTIONS] : SUGGESTED_QUESTIONS).map((q) => (
                     <button
                       key={q}
                       type="button"
