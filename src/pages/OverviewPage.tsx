@@ -1,9 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import {
+  AlertCircle,
   ArrowRight,
-  ChevronDown,
-  ChevronUp,
-  ClipboardCheck,
+  CheckCircle2,
   Compass,
   FileCheck2,
   Globe2,
@@ -18,6 +17,7 @@ import {
   INCOME_STATEMENTS,
   QUARTERLY_TRADE_SUMMARY_Q3_2026,
   REGIONAL_SALES,
+  REGIONS,
   REPORTING_PERIODS,
 } from '../data/caseSeed';
 import { useApp } from '../context/AppContext';
@@ -27,13 +27,14 @@ import {
   OPPORTUNITY_CATEGORY_META,
 } from '../domain/opportunityEngine';
 import { computeQuarterEndReadiness } from '../domain/readinessEngine';
+import { canAccessRoute } from '../domain/permissions';
 import {
   EightQuarterPerformanceChart,
-  RegionalComparisonChart,
+  RegionalSalesDonut,
+  ChinaTariffScenarioChart,
   TradeCostTrendChart,
 } from '../components/charts/FinancialCharts';
 import { PageHeader, UnavailableDataState } from '../components/common/StateViews';
-import { QuarterEndReadinessPanel } from '../components/intelligence/QuarterEndReadinessPanel';
 import { buildNeedsAttentionQueue } from '../components/overview/overviewViewModels';
 
 const SEVERITY_BADGE: Record<'high' | 'medium' | 'info', string> = {
@@ -64,7 +65,6 @@ export const OverviewPage: React.FC = () => {
 
   // Default 8-quarter trend metric to Operating Earnings
   const [chartMode, setChartMode] = useState<'sales' | 'operating_earnings' | 'margin'>('operating_earnings');
-  const [showReadinessDetail, setShowReadinessDetail] = useState(false);
 
   const canOpenFinancials = hasPermission('view_financials');
   const canOpenTrade = hasPermission('view_trade');
@@ -105,10 +105,34 @@ export const OverviewPage: React.FC = () => {
     [state.selectedQuarterId]
   );
 
-  const selectedRegionalSale = useMemo(() => {
-    if (state.selectedRegionId === 'all' || !selectedPeriod.hasRegionalSalesBreakdown) return null;
-    return REGIONAL_SALES.find((r) => r.regionId === state.selectedRegionId) ?? null;
-  }, [state.selectedRegionId, selectedPeriod]);
+  const regionalSlices = useMemo(() => {
+    if (state.selectedQuarterId === 'Q3 2026') {
+      return REGIONAL_SALES.map((row) => ({
+        regionId: row.regionId,
+        regionName: row.regionName,
+        salesCad: row.salesCurrentCad,
+      }));
+    }
+    if (state.selectedQuarterId === 'Q3 2025') {
+      return REGIONAL_SALES.map((row) => ({
+        regionId: row.regionId,
+        regionName: row.regionName,
+        salesCad: row.salesPriorYearCad,
+      }));
+    }
+    return null;
+  }, [state.selectedQuarterId]);
+
+  const activeRegionalSlice =
+    state.selectedRegionId === 'all'
+      ? null
+      : regionalSlices?.find((row) => row.regionId === state.selectedRegionId) ?? null;
+  const regionalSharePct =
+    activeRegionalSlice && currentStatement.salesCad > 0
+      ? (activeRegionalSlice.salesCad / currentStatement.salesCad) * 100
+      : null;
+  const regionalKpiMode: 'group' | 'region' | 'unavailable' =
+    state.selectedRegionId === 'all' ? 'group' : activeRegionalSlice ? 'region' : 'unavailable';
 
   const filteredIrregularCosts = useMemo(() => {
     if (!selectedPeriod.hasIrregularCostBreakdown) return [];
@@ -169,7 +193,7 @@ export const OverviewPage: React.FC = () => {
         groupedAlerts,
         scopedIrregularCosts,
         scopedCustomsEntries,
-        maxItems: 5,
+        maxItems: 8,
         currency: state.currency,
       }),
     [state, activeUser, groupedAlerts, scopedIrregularCosts, scopedCustomsEntries]
@@ -212,16 +236,6 @@ export const OverviewPage: React.FC = () => {
     return picked.slice(0, 3);
   }, [opportunities]);
 
-  // Trade Exception Spotlight (1 high-signal clickable entry)
-  const tradeSpotlightEntry = useMemo(() => {
-    if (!scopedCustomsEntries.length) return null;
-    return (
-      scopedCustomsEntries.find((e) => e.id === 'E-08') ??
-      scopedCustomsEntries.find((e) => e.id === 'E-04') ??
-      scopedCustomsEntries[0]
-    );
-  }, [scopedCustomsEntries]);
-
   // Operational Contributor scoped views
   const myRequests = useMemo(
     () => state.approvalRequests.filter((r) => r.requestedByUserId === activeUser.id),
@@ -240,27 +254,65 @@ export const OverviewPage: React.FC = () => {
     ).length;
   }, [state.evidence, scopedIrregularCosts]);
 
-  const hasNonDefaultFilters =
-    state.selectedQuarterId !== 'Q3 2026' || state.selectedRegionId !== 'all';
+  const attentionPreview = useMemo(() => {
+    const regionId = state.selectedRegionId;
+    const inScope = attentionQueue.filter((item) => {
+      if (regionId === 'all') return true;
+      const investigation = state.investigations.find((row) => row.linkedRecordId === item.recordId);
+      if (investigation) return investigation.regionId === regionId;
+      const cost = scopedIrregularCosts.find((row) => row.id === item.recordId);
+      if (cost) return cost.regionId === regionId;
+      return false;
+    });
+    return inScope.slice(0, 3);
+  }, [attentionQueue, scopedIrregularCosts, state.investigations, state.selectedRegionId]);
 
   return (
     <div className="space-y-5">
       <PageHeader
         title="Executive Overview"
-        subtitle="Financial performance, risks, and priorities."
         actions={
-          hasNonDefaultFilters ? (
-            <button
-              type="button"
-              onClick={() => {
-                setQuarterFilter('Q3 2026');
-                setRegionFilter('all');
-              }}
-              className="px-3 py-1.5 text-xs font-medium text-[#231F20] bg-white border border-[#E2E5E8] rounded-md hover:bg-[#F5F6F7] transition-colors whitespace-nowrap cursor-pointer"
-            >
-              Reset to Q3 2026 Baseline
-            </button>
-          ) : undefined
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="inline-flex items-center gap-2 bg-white border border-[#E2E5E8] rounded-md px-2.5 py-1.5 text-[#5F6368]">
+              <span className="text-[11px] font-medium">Period</span>
+              <select
+                aria-label="Reporting period"
+                value={state.selectedQuarterId}
+                onChange={(event) => setQuarterFilter(event.target.value as typeof state.selectedQuarterId)}
+                className="bg-transparent text-xs font-semibold text-[#231F20] focus:outline-none cursor-pointer"
+              >
+                {REPORTING_PERIODS.map((period) => (
+                  <option key={period.id} value={period.id}>{period.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="inline-flex items-center gap-2 bg-white border border-[#E2E5E8] rounded-md px-2.5 py-1.5 text-[#5F6368]">
+              <span className="text-[11px] font-medium">Region</span>
+              <select
+                aria-label="Region"
+                value={state.selectedRegionId}
+                onChange={(event) => setRegionFilter(event.target.value as typeof state.selectedRegionId)}
+                className="bg-transparent text-xs font-semibold text-[#231F20] focus:outline-none cursor-pointer"
+              >
+                <option value="all">All Regions</option>
+                {REGIONS.map((region) => (
+                  <option key={region.id} value={region.id}>{region.name}</option>
+                ))}
+              </select>
+            </label>
+            {(state.selectedQuarterId !== 'Q3 2026' || state.selectedRegionId !== 'all') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setQuarterFilter('Q3 2026');
+                  setRegionFilter('all');
+                }}
+                className="px-2.5 py-1.5 text-xs font-medium text-[#231F20] bg-white border border-[#E2E5E8] rounded-md hover:bg-[#F5F6F7] cursor-pointer"
+              >
+                Reset
+              </button>
+            )}
+          </div>
         }
       />
 
@@ -279,29 +331,39 @@ export const OverviewPage: React.FC = () => {
             >
               <div>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-[#5F6368]">Total Sales</span>
+                  <span className="text-xs font-medium text-[#5F6368]">
+                    {regionalKpiMode === 'group' ? 'Group Sales' : 'Regional Sales'}
+                  </span>
                   <span className="text-[11px] font-mono text-[#5F6368]">{state.selectedQuarterId} · {state.currency}</span>
                 </div>
                 <div className="text-2xl font-semibold text-[#231F20] tabular-nums whitespace-nowrap mt-1.5">
-                  {formatOverviewMoney(currentStatement.salesCad)}
+                  {regionalKpiMode === 'region' && activeRegionalSlice
+                    ? formatOverviewMoney(activeRegionalSlice.salesCad)
+                    : regionalKpiMode === 'unavailable'
+                      ? 'Not reported'
+                      : formatOverviewMoney(currentStatement.salesCad)}
                 </div>
-                {selectedRegionalSale ? (
-                  <div className="text-[11px] text-[#5F6368] mt-0.5 truncate tabular-nums">
-                    {selectedRegionalSale.regionName}: {formatOverviewMoney(selectedRegionalSale.salesCurrentCad)} (+{selectedRegionalSale.changePctReported.toFixed(1)}% YoY)
+                <div className="text-[11px] font-mono text-[#5F6368] tabular-nums mt-0.5">
+                  {regionalKpiMode === 'region' && activeRegionalSlice
+                    ? formatMoney(activeRegionalSlice.salesCad)
+                    : regionalKpiMode === 'unavailable'
+                      ? `No Appendix 1.4 split for ${state.selectedQuarterId}`
+                      : formatMoney(currentStatement.salesCad)}
+                </div>
+              </div>
+              <div className="mt-3 pt-2.5 border-t border-[#F0F1F3] text-[11px] tabular-nums text-[#5F6368]">
+                {regionalKpiMode === 'group' ? (
+                  <div className="flex items-center justify-between">
+                    <span className={salesYoYPct !== null && salesYoYPct >= 0 ? 'text-[#16A34A] font-medium' : ''}>
+                      YoY {salesYoYPct !== null ? `${salesYoYPct >= 0 ? '+' : ''}${salesYoYPct.toFixed(1)}%` : 'N/A'}
+                    </span>
+                    <span className={salesQoQPct !== null && salesQoQPct >= 0 ? 'text-[#16A34A] font-medium' : ''}>
+                      QoQ {salesQoQPct !== null ? `${salesQoQPct >= 0 ? '+' : ''}${salesQoQPct.toFixed(1)}%` : 'N/A'}
+                    </span>
                   </div>
                 ) : (
-                  <div className="text-[11px] font-mono text-[#5F6368] tabular-nums mt-0.5">
-                    {formatMoney(currentStatement.salesCad)}
-                  </div>
+                  <span>Selected-region sales only</span>
                 )}
-              </div>
-              <div className="mt-3 pt-2.5 border-t border-[#F0F1F3] flex items-center justify-between text-[11px] tabular-nums">
-                <span className={salesYoYPct !== null && salesYoYPct >= 0 ? 'text-[#16A34A] font-medium' : 'text-[#5F6368]'}>
-                  YoY {salesYoYPct !== null ? `${salesYoYPct >= 0 ? '+' : ''}${salesYoYPct.toFixed(1)}%` : 'N/A'}
-                </span>
-                <span className={salesQoQPct !== null && salesQoQPct >= 0 ? 'text-[#16A34A] font-medium' : 'text-[#5F6368]'}>
-                  QoQ {salesQoQPct !== null ? `${salesQoQPct >= 0 ? '+' : ''}${salesQoQPct.toFixed(1)}%` : 'N/A'}
-                </span>
               </div>
             </button>
 
@@ -314,23 +376,37 @@ export const OverviewPage: React.FC = () => {
             >
               <div>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-[#5F6368]">Operating Earnings</span>
+                  <span className="text-xs font-medium text-[#5F6368]">
+                    {regionalKpiMode === 'group' ? 'Operating Earnings' : 'Share of Group Sales'}
+                  </span>
                   <span className="text-[11px] font-mono text-[#5F6368]">{state.selectedQuarterId} · {state.currency}</span>
                 </div>
                 <div className="text-2xl font-semibold text-[#231F20] tabular-nums whitespace-nowrap mt-1.5">
-                  {formatOverviewMoney(currentStatement.operatingEarningsCad)}
+                  {regionalKpiMode === 'group'
+                    ? formatOverviewMoney(currentStatement.operatingEarningsCad)
+                    : regionalSharePct !== null
+                      ? `${regionalSharePct.toFixed(1)}%`
+                      : 'Not reported'}
                 </div>
                 <div className="text-[11px] font-mono text-[#5F6368] tabular-nums mt-0.5">
-                  {formatMoney(currentStatement.operatingEarningsCad)}
+                  {regionalKpiMode === 'group'
+                    ? formatMoney(currentStatement.operatingEarningsCad)
+                    : 'Regional operating earnings are not in the case'}
                 </div>
               </div>
-              <div className="mt-3 pt-2.5 border-t border-[#F0F1F3] flex items-center justify-between text-[11px] tabular-nums">
-                <span className={oeYoYDelta !== null && oeYoYDelta >= 0 ? 'text-[#16A34A] font-medium' : 'text-[#5F6368]'}>
-                  YoY {oeYoYDelta !== null ? formatOverviewMoney(oeYoYDelta, { showSign: true }) : 'N/A'}
-                </span>
-                <span className={oeQoQDelta !== null && oeQoQDelta >= 0 ? 'text-[#16A34A] font-medium' : 'text-[#5F6368]'}>
-                  QoQ {oeQoQDelta !== null ? formatOverviewMoney(oeQoQDelta, { showSign: true }) : 'N/A'}
-                </span>
+              <div className="mt-3 pt-2.5 border-t border-[#F0F1F3] text-[11px] tabular-nums text-[#5F6368]">
+                {regionalKpiMode === 'group' ? (
+                  <div className="flex items-center justify-between">
+                    <span className={oeYoYDelta !== null && oeYoYDelta >= 0 ? 'text-[#16A34A] font-medium' : ''}>
+                      YoY {oeYoYDelta !== null ? formatOverviewMoney(oeYoYDelta, { showSign: true }) : 'N/A'}
+                    </span>
+                    <span className={oeQoQDelta !== null && oeQoQDelta >= 0 ? 'text-[#16A34A] font-medium' : ''}>
+                      QoQ {oeQoQDelta !== null ? formatOverviewMoney(oeQoQDelta, { showSign: true }) : 'N/A'}
+                    </span>
+                  </div>
+                ) : (
+                  <span>Share of the selected period's group sales</span>
+                )}
               </div>
             </button>
 
@@ -343,23 +419,39 @@ export const OverviewPage: React.FC = () => {
             >
               <div>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-[#5F6368]">Operating Margin</span>
+                  <span className="text-xs font-medium text-[#5F6368]">
+                    {regionalKpiMode === 'group' ? 'Operating Margin' : 'Regional Irregular-Cost Exposure'}
+                  </span>
                   <span className="text-[11px] font-mono text-[#5F6368]">{state.selectedQuarterId}</span>
                 </div>
                 <div className="text-2xl font-semibold text-[#231F20] tabular-nums whitespace-nowrap mt-1.5">
-                  {currentStatement.oeShareOfSalesPct.toFixed(1)}%
+                  {regionalKpiMode === 'group'
+                    ? `${currentStatement.oeShareOfSalesPct.toFixed(1)}%`
+                    : regionalKpiMode === 'region' && selectedPeriod.hasIrregularCostBreakdown
+                      ? formatOverviewMoney(totalIrregularVisibleCad)
+                      : 'Not reported'}
                 </div>
                 <div className="text-[11px] text-[#5F6368] mt-0.5">
-                  OE share of sales (Appendix 1.1)
+                  {regionalKpiMode === 'group'
+                    ? 'OE share of sales (Appendix 1.1)'
+                    : selectedPeriod.hasIrregularCostBreakdown
+                      ? formatMoney(totalIrregularVisibleCad)
+                      : `No irregular-cost log for ${state.selectedQuarterId}`}
                 </div>
               </div>
-              <div className="mt-3 pt-2.5 border-t border-[#F0F1F3] flex items-center justify-between text-[11px] tabular-nums">
-                <span className={marginYoYDeltaPp !== null && marginYoYDeltaPp >= 0 ? 'text-[#16A34A] font-medium' : 'text-[#5F6368]'}>
-                  YoY {marginYoYDeltaPp !== null ? `${marginYoYDeltaPp >= 0 ? '+' : ''}${marginYoYDeltaPp.toFixed(1)} pp` : 'N/A'}
-                </span>
-                <span className={marginQoQDeltaPp !== null && marginQoQDeltaPp >= 0 ? 'text-[#16A34A] font-medium' : 'text-[#5F6368]'}>
-                  QoQ {marginQoQDeltaPp !== null ? `${marginQoQDeltaPp >= 0 ? '+' : ''}${marginQoQDeltaPp.toFixed(1)} pp` : 'N/A'}
-                </span>
+              <div className="mt-3 pt-2.5 border-t border-[#F0F1F3] text-[11px] tabular-nums text-[#5F6368]">
+                {regionalKpiMode === 'group' ? (
+                  <div className="flex items-center justify-between">
+                    <span className={marginYoYDeltaPp !== null && marginYoYDeltaPp >= 0 ? 'text-[#16A34A] font-medium' : ''}>
+                      YoY {marginYoYDeltaPp !== null ? `${marginYoYDeltaPp >= 0 ? '+' : ''}${marginYoYDeltaPp.toFixed(1)} pp` : 'N/A'}
+                    </span>
+                    <span className={marginQoQDeltaPp !== null && marginQoQDeltaPp >= 0 ? 'text-[#16A34A] font-medium' : ''}>
+                      QoQ {marginQoQDeltaPp !== null ? `${marginQoQDeltaPp >= 0 ? '+' : ''}${marginQoQDeltaPp.toFixed(1)} pp` : 'N/A'}
+                    </span>
+                  </div>
+                ) : (
+                  <span>{selectedPeriod.hasIrregularCostBreakdown ? 'Scoped irregular costs' : 'Not in the irregular-cost log'}</span>
+                )}
               </div>
             </button>
 
@@ -376,15 +468,21 @@ export const OverviewPage: React.FC = () => {
             >
               <div>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-[#5F6368]">Irregular Costs</span>
+                  <span className="text-xs font-medium text-[#5F6368]">
+                    {regionalKpiMode === 'region' ? 'Regional Issue Count' : 'Irregular-Cost Exposure'}
+                  </span>
                   <span className="text-[11px] font-mono text-[#5F6368]">
                     {selectedPeriod.hasIrregularCostBreakdown ? `${state.selectedQuarterId} · ${state.currency}` : 'Q3 2026 Only'}
                   </span>
                 </div>
                 <div className="text-2xl font-semibold text-[#231F20] tabular-nums whitespace-nowrap mt-1.5">
-                  {selectedPeriod.hasIrregularCostBreakdown
-                    ? formatOverviewMoney(totalIrregularVisibleCad)
-                    : 'Not supplied'}
+                  {regionalKpiMode === 'region'
+                    ? selectedPeriod.hasIrregularCostBreakdown
+                      ? filteredIrregularCosts.length
+                      : 'Not reported'
+                    : selectedPeriod.hasIrregularCostBreakdown
+                      ? formatOverviewMoney(totalIrregularVisibleCad)
+                      : 'Not supplied'}
                 </div>
                 <div className="text-[11px] font-mono text-[#5F6368] tabular-nums mt-0.5">
                   {selectedPeriod.hasIrregularCostBreakdown
@@ -630,7 +728,7 @@ export const OverviewPage: React.FC = () => {
                       Eight-Quarter Financial Trajectory
                     </h2>
                     <p className="text-xs text-[#5F6368] mt-0.5">
-                      Q4 2024 – Q3 2026 ({state.currency}). Click any quarter bar or point to synchronize the dashboard.
+                      Group-wide Appendix 1.1 series, Q4 2024 – Q3 2026 ({state.currency}). Regional operating earnings are not reported.
                     </p>
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -667,10 +765,7 @@ export const OverviewPage: React.FC = () => {
                 />
               </div>
 
-              <div className="mt-4 pt-3 border-t border-[#F0F1F3] flex flex-wrap items-center justify-between gap-2 text-xs">
-                <span className="text-[#5F6368]">
-                  Appendix 1.1 quarterly income statement series (000s normalized to CAD)
-                </span>
+              <div className="mt-3 pt-3 border-t border-[#F0F1F3] flex items-center justify-end text-xs">
                 <button
                   type="button"
                   onClick={() => navigate('/financials')}
@@ -802,21 +897,21 @@ export const OverviewPage: React.FC = () => {
                   <h2 className="text-sm font-semibold text-[#231F20]">Needs Attention</h2>
                 </div>
                 <p className="text-xs text-[#5F6368] mt-0.5">
-                  Top {attentionQueue.length} deduplicated priorities in your role scope.
+                  Three highest-priority items in the selected scope.
                 </p>
               </div>
               <span className="text-[11px] font-mono text-[#5F6368] tabular-nums shrink-0">
-                {attentionQueue.length} active
+                {attentionQueue.length} in scope
               </span>
             </div>
 
-            {attentionQueue.length === 0 ? (
+            {attentionPreview.length === 0 ? (
               <div className="p-4 bg-[#F5F6F7] border border-[#E2E5E8] rounded-md text-xs text-[#5F6368]">
                 No unresolved high-priority items in your active scope.
               </div>
             ) : (
               <div className="divide-y divide-[#F0F1F3]">
-                {attentionQueue.map((item) => (
+                {attentionPreview.map((item) => (
                   <button
                     key={item.id}
                     type="button"
@@ -845,18 +940,11 @@ export const OverviewPage: React.FC = () => {
                       </span>
                     </div>
 
-                    <div className="text-xs font-medium text-[#231F20] mt-1 line-clamp-1 group-hover:text-[#E53C2E] transition-colors">
-                      {item.title}
-                    </div>
-
-                    <div className="mt-1 flex items-center justify-between gap-2 text-[11px]">
-                      <span className="font-mono tabular-nums text-[#5F6368]">
-                        {item.amountLabel ?? 'Governance review'}
-                      </span>
-                      <span className="text-[#231F20] font-medium inline-flex items-center gap-0.5 shrink-0">
-                        {item.actionLabel}
-                        <ArrowRight className="w-3 h-3 text-[#5F6368] group-hover:text-[#E53C2E]" />
-                      </span>
+                    <div className="text-xs font-medium text-[#231F20] mt-1">{item.title}</div>
+                    <p className="text-[11px] text-[#5F6368] mt-1">{item.categoryLabel}. Status: {item.statusLabel}.</p>
+                    <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px]">
+                      <span className="font-mono tabular-nums text-[#231F20]">{item.amountLabel ?? 'No amount on this item'}</span>
+                      <span className="font-medium text-[#E53C2E] inline-flex items-center gap-0.5">{item.actionLabel}<ArrowRight className="w-3 h-3" /></span>
                     </div>
                   </button>
                 ))}
@@ -873,7 +961,7 @@ export const OverviewPage: React.FC = () => {
               onClick={() => navigate(isContributor ? '/data-gateway' : '/investigations')}
               className="inline-flex items-center gap-1 font-medium text-[#E53C2E] hover:underline cursor-pointer whitespace-nowrap"
             >
-              <span>{isContributor ? 'Open Data Gateway' : 'View all investigations'}</span>
+              <span>View all</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -887,130 +975,9 @@ export const OverviewPage: React.FC = () => {
         aria-label="Quarter-End Readiness and Cost Opportunities"
         className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch"
       >
-        {/* Card A: Quarter-End Readiness (compact summary + progressive disclosure) */}
-        <div className="bg-white border border-[#E2E5E8] rounded-md p-5 flex flex-col justify-between">
-          <div>
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <ClipboardCheck className="w-4 h-4 text-[#E53C2E]" />
-                <h2 className="text-sm font-semibold text-[#231F20]">
-                  Quarter-End Readiness ({readiness.quarterId})
-                </h2>
-              </div>
-              <span
-                className={`px-2 py-0.5 text-[11px] font-mono font-medium rounded border ${
-                  readiness.totalBlockingCount === 0
-                    ? 'text-[#16A34A] bg-emerald-50 border-emerald-200'
-                    : 'text-amber-800 bg-amber-50 border-amber-300'
-                }`}
-              >
-                {readiness.totalBlockingCount === 0
-                  ? 'Close Ready'
-                  : `${readiness.totalBlockingCount} open governance items`}
-              </span>
-            </div>
-
-            <p className="text-xs text-[#5F6368] mt-1">
-              Non-overlapping close checklist summed across investigations, approvals, quarantine, and evidence gaps.
-            </p>
-
-            <div className="grid grid-cols-2 gap-2.5 mt-4">
-              <button
-                type="button"
-                onClick={() => navigate(isContributor ? '/data-gateway' : '/investigations')}
-                className="text-left p-3 bg-[#F5F6F7]/70 hover:bg-[#F5F6F7] border border-[#E2E5E8] rounded-md transition-colors cursor-pointer"
-              >
-                <div className="text-[11px] text-[#5F6368]">Scoped Investigations</div>
-                <div className="mt-1 flex items-baseline justify-between">
-                  <span className="text-lg font-semibold font-mono tabular-nums text-[#231F20]">
-                    {invIndicator?.unresolvedCount ?? 0}
-                  </span>
-                  <span className="text-[11px] text-[#5F6368] tabular-nums">
-                    of {invIndicator?.totalCount ?? 0} open
-                  </span>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => navigate('/approvals')}
-                className="text-left p-3 bg-[#F5F6F7]/70 hover:bg-[#F5F6F7] border border-[#E2E5E8] rounded-md transition-colors cursor-pointer"
-              >
-                <div className="text-[11px] text-[#5F6368]">Pending Approvals</div>
-                <div className="mt-1 flex items-baseline justify-between">
-                  <span className="text-lg font-semibold font-mono tabular-nums text-[#231F20]">
-                    {aprIndicator?.unresolvedCount ?? 0}
-                  </span>
-                  <span className="text-[11px] text-[#5F6368] tabular-nums">
-                    awaiting sign-off
-                  </span>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => navigate('/data-gateway')}
-                className="text-left p-3 bg-[#F5F6F7]/70 hover:bg-[#F5F6F7] border border-[#E2E5E8] rounded-md transition-colors cursor-pointer"
-              >
-                <div className="text-[11px] text-[#5F6368]">Quarantined Imports</div>
-                <div className="mt-1 flex items-baseline justify-between">
-                  <span className="text-lg font-semibold font-mono tabular-nums text-[#231F20]">
-                    {quarIndicator?.unresolvedCount ?? 0}
-                  </span>
-                  <span className="text-[11px] text-[#5F6368]">held out of totals</span>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => navigate(isContributor ? '/data-gateway' : '/investigations')}
-                className="text-left p-3 bg-[#F5F6F7]/70 hover:bg-[#F5F6F7] border border-[#E2E5E8] rounded-md transition-colors cursor-pointer"
-              >
-                <div className="text-[11px] text-[#5F6368]">Missing Evidence</div>
-                <div className="mt-1 flex items-baseline justify-between">
-                  <span className="text-lg font-semibold font-mono tabular-nums text-[#231F20]">
-                    {evIndicator?.unresolvedCount ?? 0}
-                  </span>
-                  <span className="text-[11px] text-[#5F6368]">pending verification</span>
-                </div>
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-4 pt-3 border-t border-[#F0F1F3] flex flex-wrap items-center justify-between gap-2 text-xs">
-            <button
-              type="button"
-              onClick={() => setShowReadinessDetail((v) => !v)}
-              aria-expanded={showReadinessDetail}
-              className="inline-flex items-center gap-1.5 font-medium text-[#231F20] hover:text-[#E53C2E] transition-colors cursor-pointer"
-            >
-              <span>{showReadinessDetail ? 'Hide detailed indicators & AI briefing' : 'Inspect 6 close indicators & AI briefing'}</span>
-              {showReadinessDetail ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            </button>
-
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => navigate('/approvals')}
-                className="font-medium text-[#5F6368] hover:text-[#231F20] cursor-pointer"
-              >
-                Approvals
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate(isContributor ? '/data-gateway' : '/investigations')}
-                className="inline-flex items-center gap-1 font-medium text-[#E53C2E] hover:underline cursor-pointer"
-              >
-                <span>{isContributor ? 'Data Gateway' : 'Investigations'}</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
-
         {/* Card B: Cost Opportunities (or Scoped Governance Actions for Contributor) */}
         {canOpenOpportunities ? (
-          <div className="bg-white border border-[#E2E5E8] rounded-md p-5 flex flex-col justify-between">
+          <div className="order-1 bg-white border border-[#E2E5E8] rounded-md p-5 flex flex-col justify-between">
             <div>
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="flex items-center gap-2">
@@ -1018,7 +985,7 @@ export const OverviewPage: React.FC = () => {
                   <h2 className="text-sm font-semibold text-[#231F20]">Cost Opportunities</h2>
                 </div>
                 <span className="text-[11px] font-mono text-[#5F6368] tabular-nums">
-                  {opportunities.length} tracked · {oppAnalytics.outstandingVerificationsCount} unverified
+                  {oppAnalytics.totalRealizedCad === 0 ? 'Realized CAD 0' : `${opportunities.length} tracked`}
                 </span>
               </div>
 
@@ -1096,9 +1063,7 @@ export const OverviewPage: React.FC = () => {
             </div>
 
             <div className="mt-4 pt-3 border-t border-[#F0F1F3] flex items-center justify-between text-xs">
-              <span className="text-[#5F6368]">
-                {canRunSimulator ? 'Hypothetical scenarios tracked separately in Simulator' : 'Requires verification before realization'}
-              </span>
+              <span className="text-[#5F6368]">Potential until verified</span>
               <button
                 type="button"
                 onClick={() => navigate('/opportunities')}
@@ -1110,7 +1075,7 @@ export const OverviewPage: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="bg-white border border-[#E2E5E8] rounded-md p-5 flex flex-col justify-between">
+          <div className="order-1 bg-white border border-[#E2E5E8] rounded-md p-5 flex flex-col justify-between">
             <div>
               <div className="flex items-center gap-2">
                 <FileCheck2 className="w-4 h-4 text-[#E53C2E]" />
@@ -1151,23 +1116,10 @@ export const OverviewPage: React.FC = () => {
             </div>
           </div>
         )}
-      </section>
-
-      {/* Progressive Disclosure: Full 6-Indicator Readiness Panel + AI Briefing */}
-      {showReadinessDetail && (
-        <QuarterEndReadinessPanel />
-      )}
-
-      {/* ================================================================== */}
-      {/* LAYER 4 — SUPPORTING ANALYTICS (2 Compact Cards Only)              */}
-      {/* ================================================================== */}
-      {!isContributor && (
-        <section
-          aria-label="Supporting Regional and Trade Analytics"
-          className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch"
-        >
+        {canOpenFinancials && (
+          <>
           {/* Card A: Regional Performance */}
-          <div className="bg-white border border-[#E2E5E8] rounded-md p-5 flex flex-col justify-between">
+          <div className="order-2 bg-white border border-[#E2E5E8] rounded-md p-5 flex flex-col justify-between">
             <div>
               <div className="flex flex-wrap items-start justify-between gap-2 mb-3.5">
                 <div>
@@ -1176,11 +1128,7 @@ export const OverviewPage: React.FC = () => {
                     <h2 className="text-sm font-semibold text-[#231F20]">Regional Performance</h2>
                   </div>
                   <p className="text-xs text-[#5F6368] mt-0.5">
-                    {state.selectedQuarterId === 'Q3 2026'
-                      ? `Q3 2026 vs Q3 2025 regional sales (${state.currency}). Click a region to cross-filter.`
-                      : selectedPeriod.hasRegionalSalesBreakdown
-                        ? `Appendix 1.4 Q3 2026 vs Q3 2025 regional comparison (${state.currency}). Click a region to cross-filter.`
-                        : `Regional breakdown is not supplied in Appendix 1.4 for ${state.selectedQuarterId}.`}
+                    Sales by region for {state.selectedQuarterId} ({state.currency}). Select a region to scope the page.
                   </p>
                 </div>
                 {state.selectedRegionId !== 'all' && (
@@ -1194,18 +1142,19 @@ export const OverviewPage: React.FC = () => {
                 )}
               </div>
 
-              {selectedPeriod.hasRegionalSalesBreakdown ? (
-                <RegionalComparisonChart
-                  sales={REGIONAL_SALES}
+              {selectedPeriod.hasRegionalSalesBreakdown && regionalSlices ? (
+                <RegionalSalesDonut
+                  slices={regionalSlices}
                   selectedRegionId={state.selectedRegionId}
-                  onSelectRegion={(rid) =>
-                    setRegionFilter(state.selectedRegionId === rid ? 'all' : rid)
+                  totalCad={regionalSlices.reduce((sum, row) => sum + row.salesCad, 0)}
+                  onSelectRegion={(regionId) =>
+                    setRegionFilter(state.selectedRegionId === regionId ? 'all' : regionId)
                   }
                 />
               ) : (
                 <UnavailableDataState
                   title={`No regional sales table for ${state.selectedQuarterId}`}
-                  description="Appendix 1.4 provides regional sales comparisons only for Q3 2025 and Q3 2026."
+                  description="Appendix 1.4 provides regional sales for Q3 2025 and Q3 2026 only."
                   actionLabel="Switch to Q3 2026"
                   onAction={() => setQuarterFilter('Q3 2026')}
                 />
@@ -1214,9 +1163,11 @@ export const OverviewPage: React.FC = () => {
 
             <div className="mt-4 pt-3 border-t border-[#F0F1F3] flex items-center justify-between text-xs">
               <span className="text-[#5F6368]">
-                {selectedPeriod.hasRegionalSalesBreakdown
-                  ? `Sum matches Q3 2026 sales (${formatCompactMoney(329_700_000)})`
-                  : 'All-quarter totals remain visible in KPIs above'}
+                {state.selectedQuarterId === 'Q3 2026'
+                  ? `Sales by region, total ${formatCompactMoney(329_700_000)}`
+                  : state.selectedQuarterId === 'Q3 2025'
+                    ? `Prior-year regional sales, total ${formatCompactMoney(312_600_000)}`
+                    : 'Regional sales are not reported for this period'}
               </span>
               {canOpenGlobalOps && (
                 <button
@@ -1230,145 +1181,135 @@ export const OverviewPage: React.FC = () => {
               )}
             </div>
           </div>
+          </>
+        )}
 
-          {/* Card B: Trade Intelligence Summary (no 12-row customs or domestic tables) */}
-          <div className="bg-white border border-[#E2E5E8] rounded-md p-5 flex flex-col justify-between">
-            <div>
-              <div className="flex flex-wrap items-start justify-between gap-2 mb-3.5">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <Ship className="w-4 h-4 text-[#E53C2E]" />
-                    <h2 className="text-sm font-semibold text-[#231F20]">Trade Intelligence</h2>
-                  </div>
-                  <p className="text-xs text-[#5F6368] mt-0.5">
-                    Duty, China tariff, and brokerage cost summary ({state.selectedQuarterId}).
-                  </p>
-                </div>
-                <span className="text-[11px] font-mono text-[#5F6368] whitespace-nowrap">
-                  {selectedHistoricalTrade?.extraTariffsActive
-                    ? '25% China tariff active'
-                    : 'Pre-tariff regime'}
-                </span>
-              </div>
+      </section>
 
-              <div className="p-3.5 bg-[#F5F6F7]/70 border border-[#E2E5E8] rounded-md flex flex-wrap items-baseline justify-between gap-2">
-                <div>
-                  <div className="text-[11px] text-[#5F6368]">
-                    {isExactTradePeriod ? 'Exact Q3 2026 Trade Cost' : `${state.selectedQuarterId} Trade Cost (000s)`}
-                  </div>
-                  <div className="text-xl font-semibold font-mono tabular-nums text-[#231F20] mt-0.5">
-                    {formatMoney(tradeKpiValueCad)}
-                  </div>
-                </div>
-                <div className="text-right text-xs tabular-nums">
-                  <div className="font-mono text-[#231F20]">
-                    YoY:{' '}
-                    {selectedHistoricalTrade?.yoyChangeRoundedCad != null
-                      ? formatShortMoney(selectedHistoricalTrade.yoyChangeRoundedCad, { showSign: true })
-                      : 'N/A'}
-                  </div>
-                  <div className="text-[11px] text-[#5F6368]">
-                    {isExactTradePeriod
-                      ? `Broker net variance ${formatShortMoney(BROKER_CONTRACT_SUMMARY_Q3_2026.netOverContractCad, { showSign: true })}`
-                      : 'Detailed entries in Q3 2026'}
-                  </div>
-                </div>
-              </div>
+      <section
+        aria-label="Close readiness and China tariff exposure"
+        className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch"
+      >
+        <div className="bg-white border border-[#E2E5E8] rounded-md p-4 flex flex-col">
+          <h2 className="text-sm font-semibold text-[#231F20]">Close Readiness ({readiness.quarterId})</h2>
+          <p className="text-xs text-[#5F6368] mt-1">
+            Open work from existing records. This checklist is not a quarter-end approval.
+          </p>
+          <ul className="mt-3 divide-y divide-[#F0F1F3]">
+            {([
+              {
+                label: 'Unresolved investigations',
+                count: invIndicator?.unresolvedCount ?? 0,
+                detail: `${invIndicator?.unresolvedCount ?? 0} open of ${invIndicator?.totalCount ?? 0}`,
+                route: canAccessRoute(activeUser, '/investigations')
+                  ? '/investigations'
+                  : canAccessRoute(activeUser, '/data-gateway')
+                    ? '/data-gateway'
+                    : null,
+              },
+              {
+                label: 'Pending approvals',
+                count: aprIndicator?.unresolvedCount ?? 0,
+                detail: `${aprIndicator?.unresolvedCount ?? 0} open of ${aprIndicator?.totalCount ?? 0}`,
+                route: canAccessRoute(activeUser, '/approvals') ? '/approvals' : null,
+              },
+              {
+                label: 'Missing supporting evidence',
+                count: evIndicator?.unresolvedCount ?? 0,
+                detail: `${evIndicator?.unresolvedCount ?? 0} missing or pending verification`,
+                route: canAccessRoute(activeUser, '/investigations')
+                  ? '/investigations'
+                  : canAccessRoute(activeUser, '/data-gateway')
+                    ? '/data-gateway'
+                    : null,
+              },
+              {
+                label: 'Data validation / quarantined imports',
+                count: quarIndicator?.unresolvedCount ?? 0,
+                detail: `${quarIndicator?.unresolvedCount ?? 0} held out of trusted totals`,
+                route: canAccessRoute(activeUser, '/data-gateway') ? '/data-gateway' : null,
+              },
+            ] as const).map((item) => {
+              const clear = item.count === 0;
+              const route = item.route;
+              const body = (
+                <>
+                  {clear ? (
+                    <CheckCircle2 className="w-4 h-4 text-[#16A34A] shrink-0" aria-hidden="true" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-[#E53C2E] shrink-0" aria-hidden="true" />
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-xs font-medium text-[#231F20]">{item.label}</span>
+                    <span className="block text-[11px] text-[#5F6368]">{item.detail}</span>
+                  </span>
+                  <span className="text-sm font-semibold font-mono tabular-nums text-[#231F20]">{item.count}</span>
+                </>
+              );
+              return (
+                <li key={item.label}>
+                  {route ? (
+                    <button
+                      type="button"
+                      onClick={() => navigate(route)}
+                      className="w-full flex items-center gap-2.5 py-2 text-left hover:bg-[#F8F9FA] cursor-pointer"
+                    >
+                      {body}
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2.5 py-2">{body}</div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
 
-              {/* Concise 4-part Composition (Q3 2026 exact) */}
-              {isExactTradePeriod ? (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
-                  <div className="p-2 border border-[#E2E5E8] rounded">
-                    <div className="text-[10px] text-[#5F6368]">Normal MFN</div>
-                    <div className="text-xs font-mono font-semibold tabular-nums text-[#231F20] mt-0.5">
-                      {formatShortMoney(QUARTERLY_TRADE_SUMMARY_Q3_2026.dutyAtNormalMfnCad)}
-                    </div>
-                  </div>
-                  <div className="p-2 border border-[#E2E5E8] rounded">
-                    <div className="text-[10px] text-[#5F6368]">China Tariffs</div>
-                    <div className="text-xs font-mono font-semibold tabular-nums text-[#E53C2E] mt-0.5">
-                      {formatShortMoney(QUARTERLY_TRADE_SUMMARY_Q3_2026.extraTariffsChinaCad)}
-                    </div>
-                  </div>
-                  <div className="p-2 border border-[#E2E5E8] rounded">
-                    <div className="text-[10px] text-[#5F6368]">DDP Export</div>
-                    <div className="text-xs font-mono font-semibold tabular-nums text-[#231F20] mt-0.5">
-                      {formatShortMoney(QUARTERLY_TRADE_SUMMARY_Q3_2026.exportDutyDdpCad)}
-                    </div>
-                  </div>
-                  <div className="p-2 border border-[#E2E5E8] rounded">
-                    <div className="text-[10px] text-[#5F6368]">Broker Fees</div>
-                    <div className="text-xs font-mono font-semibold tabular-nums text-[#231F20] mt-0.5">
-                      {formatShortMoney(QUARTERLY_TRADE_SUMMARY_Q3_2026.brokerFeesCad)}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-3 p-3 bg-white border border-[#E2E5E8] rounded text-xs text-[#5F6368]">
-                  Detailed 12-shipment breakdown and 0.2% broker contract reconciliation are supplied in Appendix 3.1–3.3 for Q3 2026.
-                </div>
-              )}
-
-              {/* 1 Clickable Trade Exception Spotlight */}
-              {tradeSpotlightEntry && (
-                <button
-                  type="button"
-                  onClick={() => openDrawer({ type: 'customs_entry', record: tradeSpotlightEntry })}
-                  className="mt-3 w-full text-left p-3 bg-white hover:bg-[#F5F6F7] border border-[#E2E5E8] rounded-md transition-colors cursor-pointer flex items-center justify-between gap-3"
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5 text-[11px]">
-                      <span className="font-mono font-semibold text-[#E53C2E]">
-                        {tradeSpotlightEntry.id}
-                      </span>
-                      <span className="text-[#5F6368]">· Spotlight Exception</span>
-                    </div>
-                    <div className="text-xs font-medium text-[#231F20] truncate mt-0.5">
-                      {tradeSpotlightEntry.goods} ({tradeSpotlightEntry.route}) —{' '}
-                      {tradeSpotlightEntry.tradeAgreementStatus === 'CUSMA_not_claimed'
-                        ? 'CUSMA origin certificate unconfirmed'
-                        : 'Broker fee variance vs 0.2% contract'}
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-xs font-mono font-semibold tabular-nums text-[#231F20]">
-                      {formatMoney(tradeSpotlightEntry.totalDutyAndTariffCad)}
-                    </div>
-                    <div className="text-[11px] text-[#E53C2E]">Inspect entry</div>
-                  </div>
-                </button>
-              )}
-            </div>
-
-            <div className="mt-4 pt-3 border-t border-[#F0F1F3] flex flex-wrap items-center justify-between gap-2 text-xs">
-              <span className="text-[#5F6368]">
-                Interprovincial {formatCompactMoney(7_300_000)} freight &amp; sales tax separated
-              </span>
-              <div className="flex items-center gap-3">
-                {canRunSimulator && (
-                  <button
-                    type="button"
-                    onClick={() => navigate('/simulator')}
-                    className="font-medium text-[#231F20] hover:text-[#E53C2E] cursor-pointer whitespace-nowrap"
-                  >
-                    Tariff Simulator
-                  </button>
-                )}
-                {canOpenTrade && (
-                  <button
-                    type="button"
-                    onClick={() => navigate('/trade')}
-                    className="inline-flex items-center gap-1 font-medium text-[#E53C2E] hover:underline cursor-pointer whitespace-nowrap"
-                  >
-                    <span>Open Shipments &amp; Trade</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
+        <div className="bg-white border border-[#E2E5E8] rounded-md p-4 flex flex-col">
+          <div className="flex items-center gap-2">
+            <Ship className="w-4 h-4 text-[#E53C2E]" />
+            <h2 className="text-sm font-semibold text-[#231F20]">China Tariff Exposure</h2>
           </div>
-        </section>
-      )}
+          {canOpenTrade || canRunSimulator ? (
+            isExactTradePeriod ? (
+              <>
+                <p className="text-xs text-[#5F6368] mt-1">
+                  Q3 2026 additional China tariffs on the CAD 2,100,000 goods base.
+                  {state.selectedRegionId !== 'all' ? ' Group-wide case scenario, not split by region.' : ''}
+                </p>
+                <div className="mt-3">
+                  <ChinaTariffScenarioChart />
+                </div>
+                {canRunSimulator && (
+                  <div className="mt-3 pt-3 border-t border-[#F0F1F3] flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => navigate('/simulator')}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-[#E53C2E] hover:underline cursor-pointer"
+                    >
+                      <span>Tariff Simulator</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="mt-3">
+                <UnavailableDataState
+                  title="Tariff comparison is the Q3 2026 case"
+                  description={`These rates are not a ${state.selectedQuarterId} result.`}
+                  actionLabel="Switch to Q3 2026"
+                  onAction={() => setQuarterFilter('Q3 2026')}
+                />
+              </div>
+            )
+          ) : (
+            <p className="text-xs text-[#5F6368] mt-3">
+              China tariff scenarios are outside this role. No Q3 2026 tariff amounts are shown.
+            </p>
+          )}
+        </div>
+      </section>
     </div>
   );
 };
