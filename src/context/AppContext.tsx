@@ -7,6 +7,7 @@ import {
   OPERATING_EARNINGS_WALKS,
   PARTIAL_LEDGER_TRANSACTIONS,
 } from '../data/caseSeed';
+import { evaluateGovernanceAction, type GovernanceDecisionKind } from '../domain/governanceWorkflow';
 import {
   toUploadedCustomsRecord,
   toUploadedLedgerTransaction,
@@ -244,7 +245,7 @@ interface AppContextValue {
   approveCorrectionRequest: (requestId: string, approve: boolean) => { ok: boolean; message: string };
   reviewGovernanceRequest: (
     requestId: string,
-    decision: ReviewWorkflowStatus,
+    decision: ReviewWorkflowStatus | GovernanceDecisionKind,
     reason: string
   ) => { ok: boolean; message: string };
   recordStagedBatch: (batch: ImportBatch) => void;
@@ -1370,36 +1371,22 @@ export const AppProvider: React.FC<{ authenticatedUser: User; children: React.Re
       if (!input.title.trim() || !input.rationale.trim()) {
         return { ok: false, message: 'Request title and rationale are required.' };
       }
-      const stepsCount = input.requiredApprovalsCount ?? 1;
-      const history: ApprovalStepRecord[] =
-        stepsCount > 1
-          ? [
-              {
-                stepNumber: 1,
-                stepLabel: 'Step 1 · Specialist Accounting Review',
-                requiredRoleLabel: 'Cost Accountant (Dana Morales)',
-              },
-              {
-                stepNumber: 2,
-                stepLabel: 'Step 2 · Operations / Trade Confirmation',
-                requiredRoleLabel: 'Customs & Trade Coordinator (Marco Silva)',
-              },
-              {
-                stepNumber: 3,
-                stepLabel: 'Step 3 · Final Controller Authorization',
-                requiredRoleLabel: 'Group Controller (Helen Park)',
-              },
-            ].slice(0, stepsCount)
-          : [
-              {
-                stepNumber: 1,
-                stepLabel: 'Step 1 · Authorized Reviewer Sign-Off',
-                requiredRoleLabel:
-                  input.requestType === 'broker_discrepancy'
-                    ? 'Trade Coordinator or Group Controller'
-                    : 'Group Controller (Helen Park)',
-              },
-            ];
+      const specialistLabel =
+        input.requestType === 'broker_discrepancy'
+          ? 'Customs & Trade Coordinator (Marco Silva) may recommend'
+          : 'Cost Accountant or Trade Coordinator may recommend when the record is in their scope';
+      const history: ApprovalStepRecord[] = [
+        {
+          stepNumber: 1,
+          stepLabel: 'Specialist recommendation',
+          requiredRoleLabel: specialistLabel,
+        },
+        {
+          stepNumber: 2,
+          stepLabel: 'Final authorization',
+          requiredRoleLabel: 'Group Controller (Helen Park)',
+        },
+      ];
 
       const nowIso = new Date().toISOString();
       const req: ApprovalRequest = {
@@ -1416,7 +1403,7 @@ export const AppProvider: React.FC<{ authenticatedUser: User; children: React.Re
         status: 'demo_pending_controller',
         workflowStatus: 'Submitted',
         resolutionStatus: 'Open',
-        requiredApprovalsCount: stepsCount,
+        requiredApprovalsCount: 1,
         approvalsHistory: history,
         rationale: input.rationale.trim(),
         createdAtIso: nowIso,
@@ -1978,153 +1965,98 @@ export const AppProvider: React.FC<{ authenticatedUser: User; children: React.Re
   );
 
   const reviewGovernanceRequest = useCallback(
-    (requestId: string, decision: ReviewWorkflowStatus, reason: string): { ok: boolean; message: string } => {
+    (requestId: string, decision: ReviewWorkflowStatus | GovernanceDecisionKind, reason: string): { ok: boolean; message: string } => {
       const target = state.approvalRequests.find((r) => r.id === requestId);
       if (!target) return { ok: false, message: 'Approval request not found.' };
 
+      const kind: GovernanceDecisionKind =
+        decision === 'Approved'
+          ? 'finalize'
+          : decision === 'Rejected'
+            ? 'reject'
+            : decision === 'Additional Evidence Required'
+              ? 'request_changes'
+              : decision === 'finalize' ||
+                  decision === 'reject' ||
+                  decision === 'request_changes' ||
+                  decision === 'recommend_approve' ||
+                  decision === 'recommend_reject' ||
+                  decision === 'resubmit'
+                ? decision
+                : 'request_changes';
+
       const linkedIr = IRREGULAR_COSTS.find((c) => c.id === target.linkedRecordId);
-      const check = canUserReviewItem(activeUser, {
-        requestType: target.requestType,
-        department: linkedIr?.department,
-        requestedByUserId: target.requestedByUserId,
-      });
-
-      if (!check.allowed) {
-        setActionBanner({ type: 'warning', message: check.reason ?? 'Not authorized.' });
-        return { ok: false, message: check.reason ?? 'Not authorized.' };
-      }
-
-      if (
-        (target.isMaterial || decision === 'Approved' || decision === 'Rejected' || decision === 'Resolved') &&
-        !reason.trim()
-      ) {
-        const msg = 'A documented decision reason is required for material or final governance actions.';
-        setActionBanner({ type: 'warning', message: msg });
-        return { ok: false, message: msg };
-      }
-
-      // Check multi-step duplicate signer guard
-      const alreadySigned = target.approvalsHistory.some(
-        (s) => s.actorUserId === activeUser.id && s.decision === 'Approved'
-      );
-      if (decision === 'Approved' && target.requiredApprovalsCount > 1 && alreadySigned) {
-        const msg = `Segregation of duties: ${activeUser.name} already signed an earlier approval step on ${target.id}. A distinct reviewer must sign the next step.`;
-        setActionBanner({ type: 'warning', message: msg });
-        return { ok: false, message: msg };
-      }
-
+      const linkedCustoms = CUSTOMS_ENTRIES.find((c) => c.id === target.linkedRecordId);
+      const department = linkedIr?.department ?? (linkedCustoms ? 'Customs and Trade' : undefined);
+      const evidenceCount = state.evidence.filter(
+        (ev) =>
+          ev.status !== 'missing_in_case' &&
+          (ev.linkedRecordId === target.linkedRecordId || ev.linkedRecordId === target.id)
+      ).length;
       const nowIso = new Date().toISOString();
-      const prevState = target.workflowStatus;
+      const preview = evaluateGovernanceAction({
+        request: target,
+        actor: activeUser,
+        kind,
+        reason,
+        evidenceCount,
+        department,
+        nowIso,
+      });
+      if (!preview.ok) {
+        setActionBanner({ type: 'warning', message: preview.message });
+        return { ok: false, message: preview.message };
+      }
 
-      let resultMessage = `Updated request ${target.linkedRecordId} to ${decision}.`;
-
+      let resultMessage = preview.message;
       persistState((prev) => {
         const current = prev.approvalRequests.find((r) => r.id === requestId) ?? target;
-        let nextHistory = [...current.approvalsHistory];
-        let nextWorkflowStatus: ReviewWorkflowStatus = decision;
-        let nextLegacyStatus: ApprovalRequest['status'] = current.status;
-        let nextResolutionStatus: 'Open' | 'Resolved' = current.resolutionStatus;
-        let authRef: string | undefined;
-
-        if (decision === 'Approved') {
-          const nextPendingIdx = nextHistory.findIndex((s) => s.decision !== 'Approved');
-          if (nextPendingIdx >= 0) {
-            nextHistory[nextPendingIdx] = {
-              ...nextHistory[nextPendingIdx],
-              actorUserId: activeUser.id,
-              actorName: activeUser.name,
-              decision: 'Approved',
-              reason: reason.trim(),
-              timestampIso: nowIso,
-            };
-          }
-          const approvedCount = nextHistory.filter((s) => s.decision === 'Approved').length;
-          if (approvedCount < current.requiredApprovalsCount) {
-            nextWorkflowStatus = 'In Review';
-            nextLegacyStatus = 'demo_pending_controller';
-            resultMessage = `Recorded approval step ${approvedCount} of ${current.requiredApprovalsCount} on ${current.title}. Remaining step(s) required before final approval.`;
-          } else {
-            nextWorkflowStatus = 'Approved';
-            nextLegacyStatus = 'demo_approved';
-            authRef = `APR-${current.id.slice(-6).toUpperCase()}`;
-            resultMessage = `Final approval recorded for ${current.title} (${approvedCount}/${current.requiredApprovalsCount} steps signed).`;
-          }
-        } else if (decision === 'Rejected') {
-          const nextPendingIdx = nextHistory.findIndex((s) => !s.decision || s.decision === 'In Review');
-          if (nextPendingIdx >= 0) {
-            nextHistory[nextPendingIdx] = {
-              ...nextHistory[nextPendingIdx],
-              actorUserId: activeUser.id,
-              actorName: activeUser.name,
-              decision: 'Rejected',
-              reason: reason.trim(),
-              timestampIso: nowIso,
-            };
-          }
-          nextLegacyStatus = 'demo_rejected';
-          nextResolutionStatus = 'Resolved';
-        } else if (decision === 'Resolved') {
-          nextResolutionStatus = 'Resolved';
-        }
-
-        const updatedRequests = prev.approvalRequests.map((r) =>
-          r.id === requestId
-            ? {
-                ...r,
-                status: nextLegacyStatus,
-                workflowStatus: nextWorkflowStatus,
-                resolutionStatus: nextResolutionStatus,
-                approvalsHistory: nextHistory,
-                approverUserId: nextWorkflowStatus === 'Approved' ? activeUser.id : r.approverUserId,
-                decisionReason: reason.trim() || r.decisionReason,
-                updatedAtIso: nowIso,
-              }
-            : r
-        );
-
-        const actionType: AuditEvent['actionType'] =
-          decision === 'Approved'
-            ? 'request_approved'
-            : decision === 'Rejected'
-              ? 'request_rejected'
-              : 'record_resolution_updated';
-
-        const auditEv = buildAuditEvent(
-          activeUser,
-          actionType,
-          `${resultMessage}`,
-          current.linkedRecordId,
-          {
-            batchId: current.batchId,
-            previousState: prevState,
-            newState: nextWorkflowStatus,
-            authorizationRef: authRef,
-            reason: reason.trim(),
-          }
-        );
-
+        const freshEvidence = prev.evidence.filter(
+          (ev) =>
+            ev.status !== 'missing_in_case' &&
+            (ev.linkedRecordId === current.linkedRecordId || ev.linkedRecordId === current.id)
+        ).length;
+        const applied = evaluateGovernanceAction({
+          request: current,
+          actor: activeUser,
+          kind,
+          reason,
+          evidenceCount: freshEvidence,
+          department,
+          nowIso,
+        });
+        if (!applied.ok) return prev;
+        resultMessage = applied.message;
+        const updated = applied.request;
         let nextState: PersistedWorkspaceState = {
           ...prev,
-          approvalRequests: updatedRequests,
+          approvalRequests: prev.approvalRequests.map((r) => (r.id === requestId ? updated : r)),
           notifications: appendNotification(prev.notifications ?? [], {
-            eventKey: `apr-decision-${requestId}-${nextWorkflowStatus}-${nowIso.slice(0, 16)}`,
+            eventKey: `apr-decision-${requestId}-${updated.workflowStatus}-${nowIso.slice(0, 16)}`,
             title:
-              decision === 'Rejected'
+              updated.workflowStatus === 'Rejected'
                 ? `Request rejected: ${current.title}`
-                : nextWorkflowStatus === 'Approved'
+                : updated.workflowStatus === 'Approved'
                   ? `Approval granted: ${current.title}`
-                  : `Approval step recorded: ${current.title}`,
-            description: resultMessage,
+                  : `Governance update: ${current.title}`,
+            description: applied.message,
             category: 'approvals',
             route: '/approvals',
             targetRecordId: current.linkedRecordId,
           }),
-          auditEvents: [auditEv, ...prev.auditEvents].slice(0, 200),
+          auditEvents: [
+            buildAuditEvent(activeUser, applied.auditAction, applied.message, current.linkedRecordId, {
+              batchId: current.batchId,
+              previousState: current.workflowStatus,
+              newState: updated.workflowStatus,
+              reason: reason.trim(),
+            }),
+            ...prev.auditEvents,
+          ].slice(0, 200),
         };
 
-        // If this was an import_authorization and just reached final Approved, commit validated records!
         if (
-          nextWorkflowStatus === 'Approved' &&
+          updated.workflowStatus === 'Approved' &&
           current.requestType === 'import_authorization' &&
           current.batchId &&
           canPerformAction(activeUser, 'authorize_data_import')
@@ -2133,17 +2065,19 @@ export const AppProvider: React.FC<{ authenticatedUser: User; children: React.Re
           if (linkedBatch && !linkedBatch.authorizedAtIso && linkedBatch.validatedCount > 0) {
             const committed = commitBatchValidatedRecords(nextState, linkedBatch, activeUser, reason.trim());
             nextState = committed.nextState;
-            resultMessage = `Authorized & committed ${committed.committedCount} validated record(s) from batch "${linkedBatch.fileName}".`;
+            resultMessage = `Authorized and committed ${committed.committedCount} validated record(s) from batch "${linkedBatch.fileName}". Official Appendix figures were not edited.`;
           }
         }
-
         return nextState;
       });
 
-      setActionBanner({ type: decision === 'Rejected' ? 'info' : 'success', message: resultMessage });
+      setActionBanner({
+        type: preview.request.workflowStatus === 'Rejected' ? 'info' : 'success',
+        message: resultMessage,
+      });
       return { ok: true, message: resultMessage };
     },
-    [activeUser, appendNotification, buildAuditEvent, commitBatchValidatedRecords, persistState, state.approvalRequests]
+    [activeUser, appendNotification, buildAuditEvent, commitBatchValidatedRecords, persistState, state.approvalRequests, state.evidence]
   );
 
   const approveCorrectionRequest = useCallback(
