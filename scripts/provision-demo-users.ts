@@ -6,7 +6,8 @@
  *   SUPABASE_SERVICE_ROLE_KEY
  *   DEMO_ACCOUNT_PASSWORD
  *
- * Also apply supabase/migrations/20261118000000_auth_role_foundation.sql first,
+ * Also apply supabase/migrations/20261118000000_auth_role_foundation.sql and
+ * supabase/migrations/20261118010000_grant_service_role_user_roles.sql first,
  * and disable public sign-up in the Supabase dashboard.
  *
  * Run: npx tsx scripts/provision-demo-users.ts
