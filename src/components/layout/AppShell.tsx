@@ -177,6 +177,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
     currentRoute !== '/trade' &&
     currentRoute !== '/simulator' &&
     currentRoute !== '/investigations' &&
+    currentRoute !== '/opportunities' &&
     currentRoute !== '/reports' &&
     currentRoute !== '/data-gateway' &&
     currentRoute !== '/approvals' &&
