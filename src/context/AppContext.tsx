@@ -164,6 +164,8 @@ interface AppContextValue {
   closeDrawer: () => void;
   askModalOpen: boolean;
   setAskModalOpen: (open: boolean) => void;
+  askPromptSeed: string | null;
+  openAskWithContext: (prompt: string) => void;
   scopedIrregularCosts: IrregularCost[];
   scopedCustomsEntries: CustomsEntry[];
   ruleEvaluations: RuleEvaluationResult[];
@@ -283,6 +285,14 @@ export const AppProvider: React.FC<{ authenticatedUser: User; children: React.Re
   });
   const [drawerRecord, setDrawerRecord] = useState<DrawerRecord>(null);
   const [askModalOpen, setAskModalOpen] = useState(false);
+  const [askPromptSeed, setAskPromptSeed] = useState<string | null>(null);
+  const openAskWithContext = useCallback((prompt: string) => {
+    setAskPromptSeed(prompt);
+    setAskModalOpen(true);
+  }, []);
+  useEffect(() => {
+    if (!askModalOpen) setAskPromptSeed(null);
+  }, [askModalOpen]);
   const [simulatorPresetEntryIds, setSimulatorPresetEntryIds] = useState<string[]>(['E-04', 'E-05', 'E-06']);
   const [reportPreset, setReportPreset] = useState<ReportLaunchPreset | null>(null);
   const [actionBanner, setActionBanner] = useState<{
@@ -2249,6 +2259,8 @@ export const AppProvider: React.FC<{ authenticatedUser: User; children: React.Re
     closeDrawer: () => setDrawerRecord(null),
     askModalOpen,
     setAskModalOpen,
+    askPromptSeed,
+    openAskWithContext,
     scopedIrregularCosts,
     scopedCustomsEntries,
     ruleEvaluations,

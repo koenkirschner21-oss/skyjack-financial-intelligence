@@ -3,9 +3,11 @@ import {
   ArrowDownUp,
   CheckCircle2,
   Database,
+  AlertCircle,
   FileText,
   Filter,
   Info,
+  Sparkles,
   RotateCcw,
   Search,
   UploadCloud,
@@ -60,8 +62,10 @@ export const FinancialsPage: React.FC = () => {
     setQuarterFilter,
     scopedIrregularCosts,
     openDrawer,
+    drawerRecord,
     hasPermission,
     openReportStudioWithPreset,
+    openAskWithContext,
     formatMoney,
     formatCompactMoney,
     formatShortMoney,
@@ -438,6 +442,33 @@ export const FinancialsPage: React.FC = () => {
               <span>Data Basis</span>
             </button>
 
+            <button
+              type="button"
+              onClick={() => {
+                const selected =
+                  drawerRecord?.type === 'walk_entry'
+                    ? ` Selected walk line: ${drawerRecord.record.id}.`
+                    : drawerRecord?.type === 'irregular_cost'
+                      ? ` Selected irregular cost: ${drawerRecord.record.id}.`
+                      : selectedWalkEntryId
+                        ? ` Selected walk line: ${selectedWalkEntryId}.`
+                        : '';
+                const prompt =
+                  activeTab === 'walk'
+                    ? `Explain the ${walkType} operating-earnings bridge ending ${state.selectedQuarterId} using only the official walk lines and linked records.${selected}`
+                    : activeTab === 'irregular'
+                      ? `Explain the Q3 2026 irregular costs visible to this role. Identify which records need investigation and cite their source references. Do not treat them as confirmed fraud or recoverable cash.${selected}`
+                      : activeTab === 'ledger'
+                        ? `Summarize the ledger references available for ${state.selectedQuarterId} and cite the source records.`
+                        : `Compare ${state.selectedQuarterId} sales, operating costs, and operating earnings with the prior quarter and prior year using the official income statements.`;
+                openAskWithContext(prompt);
+              }}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-[#231F20] bg-white border border-[#E2E5E8] rounded hover:bg-[#F5F6F7] cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-[#E53C2E]" />
+              <span>Analyze with SKYJACK AI</span>
+            </button>
+
             {hasPermission('generate_reports') && (
               <button
                 type="button"
@@ -536,73 +567,76 @@ export const FinancialsPage: React.FC = () => {
             >
               {label}
               {key === 'irregular' && (
-                <span className="ml-1.5 font-mono text-[11px] text-[#7E8082]">
-                  {scopedIrregularCosts.length}
-                </span>
+                <AlertCircle className="ml-1.5 inline w-3.5 h-3.5 text-[#E53C2E]" aria-label="Irregular costs need review" />
               )}
             </button>
           ))}
         </div>
 
-        <div className="text-[11px] text-[#5F6368] font-mono">
-          Active Period: <span className="font-semibold text-[#231F20]">{state.selectedQuarterId}</span> · {state.currency}
-        </div>
+        <label className="inline-flex items-center gap-2 bg-white border border-[#E2E5E8] rounded-md px-2.5 py-1.5 text-[#5F6368]">
+          <span className="text-[11px] font-medium">Period</span>
+          <select
+            aria-label="Reporting period"
+            value={state.selectedQuarterId}
+            onChange={(event) => setQuarterFilter(event.target.value as typeof state.selectedQuarterId)}
+            className="bg-transparent text-xs font-semibold text-[#231F20] focus:outline-none cursor-pointer"
+          >
+            {REPORTING_PERIODS.map((period) => (
+              <option key={period.id} value={period.id}>{period.label}</option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {/* TAB 1: PERFORMANCE */}
       {activeTab === 'performance' && (
-        <div className="space-y-5">
+        <div className="space-y-4">
           {/* 4 Executive KPI Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div
-              className="bg-white border border-[#E2E5E8] rounded-md p-4"
+              className="bg-white border border-[#E2E5E8] rounded-md p-3"
               title={`Exact ${state.selectedQuarterId} Sales: ${formatMoney(currentStatement.salesCad)}`}
             >
               <div className="text-xs font-medium text-[#5F6368]">Sales</div>
-              <div className="text-2xl font-semibold tabular-nums text-[#231F20] mt-1">
+              <div className="text-xl font-semibold tabular-nums text-[#231F20] mt-1">
                 {formatCompactMoney(currentStatement.salesCad)}
               </div>
-              <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] font-mono tabular-nums text-[#5F6368]">
-                <span>{formatMoney(currentStatement.salesCad)}</span>
-                {yoySalesPct !== null && (
-                  <span className={yoySalesPct >= 0 ? 'text-[#16A34A] font-medium' : 'text-[#DC2626] font-medium'}>
+              {yoySalesPct !== null && (
+                <div className="mt-1.5 text-[11px] font-medium tabular-nums">
+                  <span className={yoySalesPct >= 0 ? 'text-[#16A34A]' : 'text-[#DC2626]'}>
                     {yoySalesPct >= 0 ? '+' : ''}
                     {yoySalesPct.toFixed(1)}% YoY
                   </span>
-                )}
-              </div>
+                </div>
+              )}
             </div>
 
             <div
-              className="bg-white border border-[#E2E5E8] rounded-md p-4"
+              className="bg-white border border-[#E2E5E8] rounded-md p-3"
               title={`Exact ${state.selectedQuarterId} Operating Earnings: ${formatMoney(currentStatement.operatingEarningsCad)}`}
             >
               <div className="text-xs font-medium text-[#5F6368]">Operating Earnings</div>
-              <div className="text-2xl font-semibold tabular-nums text-[#231F20] mt-1">
+              <div className="text-xl font-semibold tabular-nums text-[#231F20] mt-1">
                 {formatCompactMoney(currentStatement.operatingEarningsCad)}
               </div>
-              <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] font-mono tabular-nums text-[#5F6368]">
-                <span>{formatMoney(currentStatement.operatingEarningsCad)}</span>
-                {yoyOePct !== null && (
-                  <span className={yoyOePct >= 0 ? 'text-[#16A34A] font-medium' : 'text-[#DC2626] font-medium'}>
+              {yoyOePct !== null && (
+                <div className="mt-1.5 text-[11px] font-medium tabular-nums">
+                  <span className={yoyOePct >= 0 ? 'text-[#16A34A]' : 'text-[#DC2626]'}>
                     {yoyOePct >= 0 ? '+' : ''}
                     {yoyOePct.toFixed(1)}% YoY
                   </span>
-                )}
-              </div>
+                </div>
+              )}
             </div>
 
-            <div className="bg-white border border-[#E2E5E8] rounded-md p-4">
+            <div className="bg-white border border-[#E2E5E8] rounded-md p-3">
               <div className="text-xs font-medium text-[#5F6368]">Operating Margin</div>
-              <div className="text-2xl font-semibold tabular-nums text-[#E53C2E] mt-1">
+              <div className="text-xl font-semibold tabular-nums text-[#E53C2E] mt-1">
                 {currentStatement.oeShareOfSalesPct.toFixed(1)}%
               </div>
-              <div className="mt-1.5 text-[11px] text-[#5F6368] font-mono tabular-nums">
-                Total Costs: {formatCompactMoney(currentStatement.salesCad - currentStatement.operatingEarningsCad)}
-              </div>
             </div>
 
-            <div className="bg-white border border-[#E2E5E8] rounded-md p-4">
+            <div className="bg-white border border-[#E2E5E8] rounded-md p-3">
               <div className="text-xs font-medium text-[#5F6368]">Operating Earnings Change</div>
               <div className="mt-1.5 space-y-1">
                 <div
@@ -695,7 +729,7 @@ export const FinancialsPage: React.FC = () => {
                     Revenue Allocation ({state.selectedQuarterId})
                   </h3>
                   <p className="text-[11px] text-[#5F6368]">
-                    100% stacked view of Operating Costs &amp; Profit Margin
+                    Sales split into operating costs and operating earnings.
                   </p>
                 </div>
                 <ProvenanceText provenance="derived_calculation" sourceRef="Appendix 1.1" />
@@ -839,27 +873,24 @@ export const FinancialsPage: React.FC = () => {
 
       {/* TAB 2: EARNINGS WALK */}
       {activeTab === 'walk' && (
-        <div className="space-y-5">
+        <div className="space-y-4">
           {/* 3 Compact Bridge Metrics */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-            <div className="bg-white border border-[#E2E5E8] rounded-md p-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="bg-white border border-[#E2E5E8] rounded-md p-3">
               <div className="text-xs font-medium text-[#5F6368]">
                 Starting Operating Earnings ({activeWalk.fromQuarterId})
               </div>
-              <div className="text-xl font-semibold font-mono tabular-nums text-[#231F20] mt-1">
+              <div className="text-xl font-semibold tabular-nums text-[#231F20] mt-1">
                 {formatMoney(walkSummary.startCad)}
-              </div>
-              <div className="text-[11px] text-[#5F6368] mt-1">
-                Baseline quarter ({activeWalk.sourceRef})
               </div>
             </div>
 
-            <div className="bg-white border border-[#E2E5E8] rounded-md p-4">
+            <div className="bg-white border border-[#E2E5E8] rounded-md p-3">
               <div className="text-xs font-medium text-[#5F6368]">
                 Net {walkType} Operating Earnings Change
               </div>
               <div
-                className={`text-xl font-semibold font-mono tabular-nums mt-1 ${
+                className={`text-xl font-semibold tabular-nums mt-1 ${
                   walkSummary.netChangeCad >= 0 ? 'text-[#16A34A]' : 'text-[#DC2626]'
                 }`}
               >
@@ -871,29 +902,23 @@ export const FinancialsPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="bg-white border border-[#E2E5E8] rounded-md p-4">
+            <div className="bg-white border border-[#E2E5E8] rounded-md p-3">
               <div className="text-xs font-medium text-[#5F6368]">
                 Ending Operating Earnings ({activeWalk.toQuarterId})
               </div>
-              <div className="text-xl font-semibold font-mono tabular-nums text-[#E53C2E] mt-1">
+              <div className="text-xl font-semibold tabular-nums text-[#E53C2E] mt-1">
                 {formatMoney(walkSummary.endCad)}
-              </div>
-              <div className="text-[11px] text-[#16A34A] font-medium mt-1 inline-flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Reconciles exactly to Q3 2026 P&amp;L
               </div>
             </div>
           </div>
 
           {/* Waterfall Card */}
-          <div className="bg-white border border-[#E2E5E8] rounded-md p-4 space-y-4">
+          <div className="bg-white border border-[#E2E5E8] rounded-md p-3 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h3 className="text-sm font-semibold text-[#231F20]">{activeWalk.title}</h3>
                 <p className="text-xs text-[#5F6368]">
-                  {materialOnly
-                    ? `Showing material variances (≥ ${formatCompactMoney(1_000_000)}) plus grouped net of ${walkSummary.minorCount} minor items so the bridge still reconciles to ${formatMoney(walkSummary.endCad)}.`
-                    : `Full ${activeWalk.entries.length}-step bridge from ${formatMoney(walkSummary.startCad)} to ${formatMoney(walkSummary.endCad)}. Click any bar to inspect details.`}
+                  Select a bar to inspect its details. Material lines are at least {formatCompactMoney(1_000_000)}.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -948,7 +973,7 @@ export const FinancialsPage: React.FC = () => {
                   Walk Line Detail &amp; Irregular Cost Mapping
                 </h3>
                 <p className="text-[11px] text-[#5F6368]">
-                  Direct Appendix links (IR-01, IR-02 in YoY), contextual bucket links, and aggregate lines without forced 1:1 mappings.
+                  Linked case records stay attached to the walk line.
                 </p>
               </div>
               <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[#16A34A]">
@@ -1069,22 +1094,22 @@ export const FinancialsPage: React.FC = () => {
 
       {/* TAB 3: IRREGULAR COSTS */}
       {activeTab === 'irregular' && (
-        <div className="space-y-5">
+        <div className="space-y-4">
           {/* 4 Summary Metrics */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5">
-            <div className="bg-white border border-[#E2E5E8] rounded-md p-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            <div className="bg-white border border-[#E2E5E8] rounded-md p-3">
               <div className="text-xs font-medium text-[#5F6368]">Flagged Amount (Q3 2026)</div>
-              <div className="text-2xl font-semibold font-mono tabular-nums text-[#231F20] mt-1">
+              <div className="text-xl font-semibold tabular-nums text-[#231F20] mt-1">
                 {formatMoney(irregularSummary.totalCad)}
               </div>
               <div className="text-[11px] text-[#5F6368] mt-1 leading-snug">
-                Recorded expenses inside Operating Earnings; not guaranteed savings or confirmed fraud.
+                Recorded in operating earnings. Not confirmed fraud or recoverable cash.
               </div>
             </div>
 
-            <div className="bg-white border border-[#E2E5E8] rounded-md p-4">
+            <div className="bg-white border border-[#E2E5E8] rounded-md p-3">
               <div className="text-xs font-medium text-[#5F6368]">Visible Case Records</div>
-              <div className="text-2xl font-semibold font-mono tabular-nums text-[#231F20] mt-1">
+              <div className="text-xl font-semibold tabular-nums text-[#231F20] mt-1">
                 {scopedIrregularCosts.length}
               </div>
               <div className="text-[11px] text-[#5F6368] mt-1">
@@ -1092,9 +1117,9 @@ export const FinancialsPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="bg-white border border-[#E2E5E8] rounded-md p-4">
+            <div className="bg-white border border-[#E2E5E8] rounded-md p-3">
               <div className="text-xs font-medium text-[#5F6368]">Largest Irregular Item</div>
-              <div className="text-2xl font-semibold font-mono tabular-nums text-[#E53C2E] mt-1">
+              <div className="text-xl font-semibold tabular-nums text-[#E53C2E] mt-1">
                 {irregularSummary.largest ? formatMoney(irregularSummary.largest.amountCad) : formatMoney(0)}
               </div>
               <div className="text-[11px] text-[#5F6368] mt-1 truncate">
@@ -1104,7 +1129,7 @@ export const FinancialsPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="bg-white border border-[#E2E5E8] rounded-md p-4">
+            <div className="bg-white border border-[#E2E5E8] rounded-md p-3">
               <div className="text-xs font-medium text-[#5F6368]">One-Time vs. Trend Split</div>
               <div className="mt-1.5 space-y-1 text-xs font-mono tabular-nums">
                 <div className="flex items-center justify-between">

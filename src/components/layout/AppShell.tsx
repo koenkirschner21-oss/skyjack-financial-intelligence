@@ -173,6 +173,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
   const showLayer2Filters =
     currentRoute !== '/overview' &&
     currentRoute !== '/global-operations' &&
+    currentRoute !== '/financials' &&
     currentRoute !== '/reports' &&
     currentRoute !== '/data-gateway' &&
     currentRoute !== '/approvals' &&
@@ -646,7 +647,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                     </select>
                   </label>
 
-                  {currentRoute !== '/financials' && currentRoute !== '/simulator' && (
+                  {currentRoute !== '/simulator' && (
                     <label className="inline-flex items-center gap-2 bg-[#F8F9FA] border border-[#E2E5E8] rounded-md px-2.5 py-1 text-[#5F6368] hover:border-[#C8CACD] focus-within:border-[#231F20] transition-colors">
                       <span className="text-[11px] font-medium text-[#5F6368]">Region</span>
                       <select
@@ -665,8 +666,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                     </label>
                   )}
 
-                  {currentRoute !== '/financials' &&
-                    currentRoute !== '/trade' &&
+                  {currentRoute !== '/trade' &&
                     currentRoute !== '/simulator' &&
                     currentRoute !== '/investigations' && (
                     <label className="inline-flex items-center gap-2 bg-[#F8F9FA] border border-[#E2E5E8] rounded-md px-2.5 py-1 text-[#5F6368] hover:border-[#C8CACD] focus-within:border-[#231F20] transition-colors">

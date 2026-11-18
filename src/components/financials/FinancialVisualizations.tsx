@@ -19,42 +19,42 @@ const COMPOSITION_SEGMENTS: ReadonlyArray<{
   field: StatementRowField;
   label: string;
   shortLabel: string;
-  role: 'Expense' | 'Profit Margin';
+  role: 'Operating cost' | 'Operating earnings';
   color: string;
 }> = [
   {
     field: 'variableCostsCad',
     label: 'Variable Costs',
     shortLabel: 'Variable',
-    role: 'Expense',
+    role: 'Operating cost',
     color: '#231F20',
   },
   {
     field: 'fixedPlantCostsCad',
     label: 'Fixed Plant Costs',
     shortLabel: 'Fixed Plant',
-    role: 'Expense',
+    role: 'Operating cost',
     color: '#525860',
   },
   {
     field: 'sgaCad',
     label: 'SG&A',
     shortLabel: 'SG&A',
-    role: 'Expense',
+    role: 'Operating cost',
     color: '#7E8082',
   },
   {
     field: 'amortizationCad',
     label: 'Amortization',
     shortLabel: 'Amort.',
-    role: 'Expense',
+    role: 'Operating cost',
     color: '#AEB4BA',
   },
   {
     field: 'operatingEarningsCad',
     label: 'Operating Earnings',
-    shortLabel: 'OE Profit',
-    role: 'Profit Margin',
+    shortLabel: 'OE',
+    role: 'Operating earnings',
     color: '#16A34A',
   },
 ];
@@ -175,7 +175,7 @@ export const CostCompositionChart: React.FC<CostCompositionChartProps> = ({
                 </span>
                 <span
                   className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
-                    item.role === 'Profit Margin'
+                    item.role === 'Operating earnings'
                       ? 'bg-[#DCFCE7] text-[#15803D]'
                       : 'bg-[#F3F4F6] text-[#5F6368]'
                   }`}
