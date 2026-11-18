@@ -134,6 +134,7 @@ export function buildGroundedContextPacket(
   const canViewApprovals = canPerformAction(user, 'submit_correction_request');
   const canViewQuarantine = canPerformAction(user, 'review_quarantined_records');
   const canViewAudit = canPerformAction(user, 'view_audit_history');
+  const canViewOpportunities = canPerformAction(user, 'view_opportunities');
 
   const officialCaseFacts: Record<string, unknown> = {};
   const authorizedUploadsFacts: Record<string, unknown> = {};
@@ -677,20 +678,26 @@ export function buildGroundedContextPacket(
 
   // 8. Opportunities & Quarter-End Readiness & Evidence/Audit
   if (mentionsOpportunities) {
-    invokedTools.push('retrieveCostOpportunities');
-    const opps = buildCostOpportunities(state, user);
-    officialCaseFacts.costOpportunities = opps.map((o) => ({
-      id: o.id,
-      title: o.title,
-      category: o.category,
-      financialImpactType: o.financialImpactType,
-      estimatedAmountCad: o.estimatedAmountCad,
-      verifiedAmountCad: o.verifiedAmountCad,
-      realizedAmountCad: o.realizedAmountCad,
-      status: o.status,
-      sourceRecordId: o.sourceRecordId,
-    }));
-    officialCaseFacts.opportunityAnalytics = computeOpportunityAnalytics(opps);
+    if (!canViewOpportunities) {
+      permissionRestrictions.push(
+        'Cost opportunity registers, including estimated recoveries and hypothetical savings, are outside this role.'
+      );
+    } else {
+      invokedTools.push('retrieveCostOpportunities');
+      const opps = buildCostOpportunities(state, user);
+      officialCaseFacts.costOpportunities = opps.map((o) => ({
+        id: o.id,
+        title: o.title,
+        category: o.category,
+        financialImpactType: o.financialImpactType,
+        estimatedAmountCad: o.estimatedAmountCad,
+        verifiedAmountCad: o.verifiedAmountCad,
+        realizedAmountCad: o.realizedAmountCad,
+        status: o.status,
+        sourceRecordId: o.sourceRecordId,
+      }));
+      officialCaseFacts.opportunityAnalytics = computeOpportunityAnalytics(opps);
+    }
   }
 
   if (mentionsReadiness) {

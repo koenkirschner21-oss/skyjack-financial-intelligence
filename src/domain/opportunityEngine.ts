@@ -10,7 +10,11 @@ import {
   OpportunityWorkflowStatus,
   User,
 } from '../types/domain';
-import { filterCustomsEntriesForUser, filterIrregularCostsForUser } from './permissions';
+import {
+  canPerformAction,
+  filterCustomsEntriesForUser,
+  filterIrregularCostsForUser,
+} from './permissions';
 import {
   calculateExpectedBrokerFeeCad,
   formatCad,
@@ -125,6 +129,12 @@ export function buildCostOpportunities(
   state: PersistedWorkspaceState,
   user: User
 ): CostOpportunity[] {
+  // Cost Opportunities is a permissioned register. Roles without view_opportunities
+  // must not receive estimated amounts through totals, exports, or AI context.
+  if (!canPerformAction(user, 'view_opportunities')) {
+    return [];
+  }
+
   const overrideMap = new Map(
     (state.opportunityOverrides ?? []).map((o) => [o.opportunityId, o])
   );
