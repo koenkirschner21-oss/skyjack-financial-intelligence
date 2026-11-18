@@ -1033,8 +1033,7 @@ export const OverviewPage: React.FC = () => {
                   <div className="text-sm font-semibold font-mono tabular-nums text-[#231F20] mt-0.5">
                     {formatCompactMoney(
                       oppAnalytics.potentialCashRecoveryCad +
-                        oppAnalytics.brokerDiscrepancyGrossCad +
-                        oppAnalytics.tradeAgreementPotentialCad
+                        oppAnalytics.brokerDiscrepancyGrossCad
                     )}
                   </div>
                 </div>
