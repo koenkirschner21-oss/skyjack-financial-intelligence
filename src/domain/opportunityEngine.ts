@@ -10,8 +10,10 @@ import {
   OpportunityWorkflowStatus,
   User,
 } from '../types/domain';
+import { filterCustomsEntriesForUser, filterIrregularCostsForUser } from './permissions';
 import {
   calculateExpectedBrokerFeeCad,
+  formatCad,
   fromMinorCents,
   toMinorCents,
 } from './rulesEngine';
@@ -144,12 +146,21 @@ export function buildCostOpportunities(
   };
 
   const list: CostOpportunity[] = [];
-  const canSeeTrade = user.roleId !== 'operational_contributor';
+  const scopedIrregularIds = new Set(
+    filterIrregularCostsForUser(user, IRREGULAR_COSTS).map((cost) => cost.id)
+  );
+  const scopedCustomsEntries = filterCustomsEntriesForUser(user, CUSTOMS_ENTRIES);
+  const canSeeCustoms = scopedCustomsEntries.length > 0;
   const canSeeFinance = user.roleId === 'controller' || user.roleId === 'cost_accountant';
+
+  const brokerVarianceCents = (entry: (typeof CUSTOMS_ENTRIES)[number]): number => {
+    const expected = calculateExpectedBrokerFeeCad(entry.goodsValueCad, 0.2);
+    return toMinorCents(entry.brokerFeeChargedCad) - toMinorCents(expected);
+  };
 
   // 1. IR-03 Duplicate vendor invoice (Cash recovery candidate)
   const ir03 = IRREGULAR_COSTS.find((c) => c.id === 'IR-03');
-  if (ir03 && canSeeFinance) {
+  if (ir03 && scopedIrregularIds.has(ir03.id)) {
     list.push(
       applyOverride({
         id: 'opp-ir03-duplicate',
@@ -178,7 +189,7 @@ export function buildCostOpportunities(
 
   // 2. IR-06 Unreversed warranty accrual (Accounting correction — NOT cash recovery)
   const ir06 = IRREGULAR_COSTS.find((c) => c.id === 'IR-06');
-  if (ir06 && canSeeFinance) {
+  if (ir06 && scopedIrregularIds.has(ir06.id)) {
     list.push(
       applyOverride({
         id: 'opp-ir06-warranty',
@@ -207,7 +218,7 @@ export function buildCostOpportunities(
 
   // 3. IR-02 Rush freight reclassification (Accounting correction — zero net OE cash impact)
   const ir02 = IRREGULAR_COSTS.find((c) => c.id === 'IR-02');
-  if (ir02 && (canSeeFinance || user.roleId === 'trade_coordinator')) {
+  if (ir02 && scopedIrregularIds.has(ir02.id)) {
     list.push(
       applyOverride({
         id: 'opp-ir02-reclass',
@@ -236,7 +247,7 @@ export function buildCostOpportunities(
 
   // 4. IR-07 Unmatched broker fee accrual (Cash recovery candidate, overlap-checked against Q3 customs broker audit)
   const ir07 = IRREGULAR_COSTS.find((c) => c.id === 'IR-07');
-  if (ir07 && (canSeeFinance || canSeeTrade)) {
+  if (ir07 && scopedIrregularIds.has(ir07.id)) {
     list.push(
       applyOverride({
         id: 'opp-ir07-broker-unmatched',
@@ -268,7 +279,7 @@ export function buildCostOpportunities(
 
   // 5. IR-01 Plant 2 Scrap Write-Off (Avoidable operating cost)
   const ir01 = IRREGULAR_COSTS.find((c) => c.id === 'IR-01');
-  if (ir01) {
+  if (ir01 && scopedIrregularIds.has(ir01.id)) {
     list.push(
       applyOverride({
         id: 'opp-ir01-scrap-control',
@@ -295,18 +306,20 @@ export function buildCostOpportunities(
     );
   }
 
-  // 6. Customs Gross Broker Overcharges (Appendix 3.2/3.3: E-02, E-04, E-05, E-06, E-07, E-12 = CAD 8,260 gross)
-  if (canSeeTrade) {
-    const overchargeEntries = CUSTOMS_ENTRIES.filter((entry) => {
-      const exp = calculateExpectedBrokerFeeCad(entry.goodsValueCad, 0.2);
-      return toMinorCents(entry.brokerFeeChargedCad) > toMinorCents(exp);
-    });
-    const grossOverchargeCad = fromMinorCents(
-      overchargeEntries.reduce((sum, entry) => {
-        const exp = calculateExpectedBrokerFeeCad(entry.goodsValueCad, 0.2);
-        return sum + (toMinorCents(entry.brokerFeeChargedCad) - toMinorCents(exp));
-      }, 0)
+  // 6. Customs broker variance vs 0.2% contract (Appendix 3.2/3.3)
+  if (canSeeCustoms) {
+    const overchargeEntries = scopedCustomsEntries.filter((entry) => brokerVarianceCents(entry) > 0);
+    const underchargeEntries = scopedCustomsEntries.filter((entry) => brokerVarianceCents(entry) < 0);
+    const grossOverchargeCents = overchargeEntries.reduce((sum, entry) => sum + brokerVarianceCents(entry), 0);
+    const underchargeCents = underchargeEntries.reduce((sum, entry) => sum + brokerVarianceCents(entry), 0);
+    const grossOverchargeCad = fromMinorCents(grossOverchargeCents);
+    const underchargeCad = fromMinorCents(Math.abs(underchargeCents));
+    const netOverContractCad = fromMinorCents(grossOverchargeCents + underchargeCents);
+    const chinaOverchargeEntries = overchargeEntries.filter((entry) => entry.originCountry === 'China');
+    const chinaOverchargeCad = fromMinorCents(
+      chinaOverchargeEntries.reduce((sum, entry) => sum + brokerVarianceCents(entry), 0)
     );
+    const underchargeLabel = underchargeEntries.map((entry) => entry.id).join(', ') || 'none';
 
     list.push(
       applyOverride({
@@ -322,21 +335,20 @@ export function buildCostOpportunities(
         verifiedAmountCad: 0,
         realizedAmountCad: 0,
         isGuaranteedRecoverable: false,
-        description: `Aggregate gross broker fee overcharges vs. 0.2% contract across ${overchargeEntries.length} Q3 shipments (includes CAD 6,300 across China entries E-04, E-05, E-06). Note: Net over-contract variance is CAD 5,560 after CAD 2,700 undercharges on E-01/E-09/E-10.`,
+        description: `Aggregate gross broker fee overcharges vs. 0.2% contract across ${overchargeEntries.length} Q3 shipments (includes ${formatCad(chinaOverchargeCad)} across China entries ${chinaOverchargeEntries.map((e) => e.id).join(', ')}). Note: Net over-contract variance is ${formatCad(netOverContractCad)} after ${formatCad(underchargeCad)} undercharge on ${underchargeLabel}.`,
         verificationRequired:
           'Reconcile individual broker bills against 0.2% contract fee clause and confirm whether undercharges offset gross claim.',
         ownerUserId: 'user-marco-silva',
         status: 'Identified',
         associatedInvestigationId: invByRecord.get('E-04'),
         overlapGroupId: 'broker-fee-domain',
-        overlapWarning:
-          'Reconcile against IR-07 unmatched broker accrual (CAD 118,000) and E-01/E-09/E-10 undercharges (CAD 2,700) before booking recovery.',
+        overlapWarning: `Reconcile against IR-07 unmatched broker accrual (${formatCad(ir07?.amountCad ?? 0)}) and ${underchargeLabel} undercharge (${formatCad(underchargeCad)}) before booking recovery.`,
         provenance: 'official_case_data',
       })
     );
 
-    // 7. E-08 Potential CUSMA Exemption (CAD 11,020)
-    const e08 = CUSTOMS_ENTRIES.find((e) => e.id === 'E-08');
+    // 7. E-08 Potential CUSMA Exemption — unconfirmed; not a cash recovery
+    const e08 = scopedCustomsEntries.find((e) => e.id === 'E-08');
     if (e08) {
       list.push(
         applyOverride({
@@ -395,7 +407,7 @@ export function buildCostOpportunities(
   }
 
   // 9. Saved Tariff Scenarios (Strictly hypothetical policy impact, never mixed with cash recoveries)
-  if (canSeeTrade || canSeeFinance) {
+  if (canSeeCustoms || canSeeFinance) {
     state.savedScenarios.forEach((scen) => {
       if (scen.annualizedDifferenceCad < 0) {
         const savingsAbs = Math.abs(scen.annualizedDifferenceCad);
