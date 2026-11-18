@@ -19,6 +19,7 @@ import {
   AiInvestigationBrief,
   Investigation,
   InvestigationWorkflowStatus,
+  RegionId,
 } from '../types/domain';
 import { FinancialDigitalThreadView } from '../components/intelligence/FinancialDigitalThreadView';
 import {
@@ -84,7 +85,7 @@ export const InvestigationsPage: React.FC = () => {
     openRecordById,
     navigate,
     setRegionFilter,
-    setQuarterFilter,
+    openAskWithContext,
     updateInvestigationWorkflow,
     promoteQuarantinedToInvestigation,
     saveAiInvestigationNote,
@@ -106,6 +107,7 @@ export const InvestigationsPage: React.FC = () => {
   const [priorityFilter, setPriorityFilter] = useState<'all' | 'High' | 'Medium' | 'Standard'>('all');
   const [ownerFilter, setOwnerFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<QueueCategoryFilter>('all');
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
 
   const [selectedId, setSelectedId] = useState<string>('inv-ir-01');
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('overview');
@@ -495,13 +497,35 @@ export const InvestigationsPage: React.FC = () => {
               <span>Scope &amp; Sources</span>
             </button>
 
+            <label className="inline-flex items-center gap-2 bg-white border border-[#E2E5E8] rounded-md px-2.5 py-1.5 text-[#5F6368]">
+              <span className="text-[11px] font-medium">Region</span>
+              <select
+                aria-label="Investigation region"
+                value={state.selectedRegionId}
+                onChange={(event) => setRegionFilter(event.target.value as RegionId)}
+                className="bg-transparent text-xs font-semibold text-[#231F20] focus:outline-none cursor-pointer"
+              >
+                <option value="all">All Regions</option>
+                {REGIONS.map((region) => (
+                  <option key={region.id} value={region.id}>{region.name}</option>
+                ))}
+                <option value="corporate">Corporate</option>
+              </select>
+            </label>
+            <div
+              className="inline-flex items-center gap-2 bg-white border border-[#E2E5E8] rounded-md px-2.5 py-1.5 text-[#5F6368]"
+              aria-label="Reporting period Q3 2026"
+            >
+              <span className="text-[11px] font-medium">Period</span>
+              <span className="text-xs font-semibold text-[#231F20]">Q3 2026</span>
+            </div>
             {hasPermission('generate_reports') && (
               <button
                 type="button"
                 onClick={() =>
                   openReportStudioWithPreset({
                     templateId: 'financial_risk_review',
-                    reportingPeriod: state.selectedQuarterId,
+                    reportingPeriod: 'Q3 2026',
                     includedSections: [
                       'gov_investigation_summary',
                       'reg_irregular_costs',
@@ -511,9 +535,9 @@ export const InvestigationsPage: React.FC = () => {
                     ],
                   })
                 }
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-[#231F20] rounded hover:bg-[#3A3536] cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-[#E53C2E] rounded hover:bg-[#CC3124] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E53C2E] cursor-pointer"
               >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-[#E53C2E]" />
+                <FileSpreadsheet className="w-3.5 h-3.5" />
                 <span>Export Risk Review</span>
               </button>
             )}
@@ -546,22 +570,6 @@ export const InvestigationsPage: React.FC = () => {
         }
       />
 
-      {/* Period Applicability Notice when Layer 2 Period != Q3 2026 */}
-      {state.selectedQuarterId !== 'Q3 2026' && (
-        <div className="px-3.5 py-2 bg-white border border-[#E2E5E8] rounded-md flex flex-wrap items-center justify-between gap-2 text-xs">
-          <span className="text-[#5F6368]">
-            Case investigations reflect Q3 2026 operational &amp; customs exceptions (Appendix 2.1/2.3 &amp; 3.2).
-          </span>
-          <button
-            type="button"
-            onClick={() => setQuarterFilter('Q3 2026')}
-            className="font-medium text-[#E53C2E] hover:underline cursor-pointer"
-          >
-            Switch to Q3 2026
-          </button>
-        </div>
-      )}
-
       {/* Concise Actionable Investigation Summary Strip */}
       <section
         aria-label="Investigation Summary"
@@ -574,7 +582,7 @@ export const InvestigationsPage: React.FC = () => {
               setStatusFilter((prev) => (prev === 'unresolved' ? 'all' : 'unresolved'));
               setMobileView('queue');
             }}
-            className={`p-3.5 text-left transition-colors cursor-pointer ${
+            className={`p-3 text-left transition-colors cursor-pointer ${
               statusFilter === 'unresolved' ? 'bg-[#FDF2F1]' : 'hover:bg-[#F8F9FA]'
             }`}
           >
@@ -584,7 +592,7 @@ export const InvestigationsPage: React.FC = () => {
                 {summary.unresolvedCount}
               </span>
               <span className="text-[11px] text-[#5F6368] tabular-nums">
-                of {summary.totalScoped} scoped
+                of {summary.totalScoped}
               </span>
             </div>
           </button>
@@ -595,7 +603,7 @@ export const InvestigationsPage: React.FC = () => {
               setPriorityFilter((prev) => (prev === 'High' ? 'all' : 'High'));
               setMobileView('queue');
             }}
-            className={`p-3.5 text-left transition-colors cursor-pointer ${
+            className={`p-3 text-left transition-colors cursor-pointer ${
               priorityFilter === 'High' ? 'bg-[#FDF2F1]' : 'hover:bg-[#F8F9FA]'
             }`}
           >
@@ -605,7 +613,7 @@ export const InvestigationsPage: React.FC = () => {
                 {summary.highCount}
               </span>
               <span className="text-[11px] text-[#5F6368]">
-                {priorityFilter === 'High' ? 'Filter active' : 'Click to filter'}
+                {priorityFilter === 'High' ? 'Filter active' : 'Unresolved'}
               </span>
             </div>
           </button>
@@ -616,7 +624,7 @@ export const InvestigationsPage: React.FC = () => {
               setStatusFilter((prev) => (prev === 'needs_action' ? 'all' : 'needs_action'));
               setMobileView('queue');
             }}
-            className={`p-3.5 text-left transition-colors cursor-pointer ${
+            className={`p-3 text-left transition-colors cursor-pointer ${
               statusFilter === 'needs_action' ? 'bg-[#FDF2F1]' : 'hover:bg-[#F8F9FA]'
             }`}
           >
@@ -628,13 +636,13 @@ export const InvestigationsPage: React.FC = () => {
                 {summary.needsActionCount}
               </span>
               <span className="text-[11px] text-[#5F6368]">
-                {statusFilter === 'needs_action' ? 'Filter active' : 'Pending review / docs'}
+                {statusFilter === 'needs_action' ? 'Filter active' : 'Open'}
               </span>
             </div>
           </button>
 
           {/* Separated Financial Exposure Categories (Never summed across heterogeneous types) */}
-          <div className="p-3.5 space-y-1 text-[11px]">
+          <div className="p-3 space-y-1 text-[11px]">
             <div className="flex items-center justify-between gap-2 text-[#5F6368]">
               <span className="font-medium">Scoped Amounts (By Type)</span>
               {activeRegionLabel && (
@@ -747,7 +755,7 @@ export const InvestigationsPage: React.FC = () => {
 
             <div className="grid grid-cols-2 gap-1.5 text-[11px]">
               <select
-                aria-label="Filter by workflow status"
+                aria-label="Filter by status"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as QueueStatusFilter)}
                 className="bg-white border border-[#E2E5E8] rounded px-2 py-1 text-[#231F20]"
@@ -763,44 +771,56 @@ export const InvestigationsPage: React.FC = () => {
               </select>
 
               <select
-                aria-label="Filter by priority"
-                value={priorityFilter}
-                onChange={(e) =>
-                  setPriorityFilter(e.target.value as 'all' | 'High' | 'Medium' | 'Standard')
-                }
-                className="bg-white border border-[#E2E5E8] rounded px-2 py-1 text-[#231F20]"
-              >
-                <option value="all">All Priorities</option>
-                <option value="High">High Priority</option>
-                <option value="Medium">Medium Priority</option>
-                <option value="Standard">Standard Priority</option>
-              </select>
-
-              <select
-                aria-label="Filter by owner"
-                value={ownerFilter}
-                onChange={(e) => setOwnerFilter(e.target.value)}
-                className="bg-white border border-[#E2E5E8] rounded px-2 py-1 text-[#231F20]"
-              >
-                <option value="all">All Owners</option>
-                {DEMO_USERS.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                aria-label="Filter by category"
+                aria-label="Filter by issue type"
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value as QueueCategoryFilter)}
                 className="bg-white border border-[#E2E5E8] rounded px-2 py-1 text-[#231F20]"
               >
-                <option value="all">All Categories</option>
+                <option value="all">All Issue Types</option>
                 <option value="irregular_cost">Irregular Costs</option>
                 <option value="customs_entry">Customs &amp; Broker</option>
                 <option value="quarantined_record">Quarantined Uploads</option>
               </select>
+            </div>
+            <div className="relative">
+              <button
+                type="button"
+                aria-expanded={moreFiltersOpen}
+                onClick={() => setMoreFiltersOpen((open) => !open)}
+                className="text-[11px] font-medium text-[#5F6368] hover:text-[#231F20] cursor-pointer"
+              >
+                More filters
+              </button>
+              {moreFiltersOpen && (
+                <div className="mt-1.5 grid grid-cols-2 gap-1.5 text-[11px]">
+                  <select
+                    aria-label="Filter by priority"
+                    value={priorityFilter}
+                    onChange={(e) =>
+                      setPriorityFilter(e.target.value as 'all' | 'High' | 'Medium' | 'Standard')
+                    }
+                    className="bg-white border border-[#E2E5E8] rounded px-2 py-1 text-[#231F20]"
+                  >
+                    <option value="all">All Priorities</option>
+                    <option value="High">High Priority</option>
+                    <option value="Medium">Medium Priority</option>
+                    <option value="Standard">Standard Priority</option>
+                  </select>
+                  <select
+                    aria-label="Filter by owner"
+                    value={ownerFilter}
+                    onChange={(e) => setOwnerFilter(e.target.value)}
+                    className="bg-white border border-[#E2E5E8] rounded px-2 py-1 text-[#231F20]"
+                  >
+                    <option value="all">All Owners</option>
+                    {DEMO_USERS.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           </div>
 
@@ -944,16 +964,15 @@ export const InvestigationsPage: React.FC = () => {
                     </button>
                     <button
                       type="button"
-                      disabled={aiLoading}
-                      onClick={handleAnalyzeWithAi}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[#231F20] rounded hover:bg-[#3A3536] disabled:opacity-50 cursor-pointer whitespace-nowrap"
+                      onClick={() =>
+                        openAskWithContext(
+                          `Analyze investigation ${selectedInv.linkedRecordId} (${selectedInv.linkedRecordType.replace(/_/g, ' ')}): ${selectedInv.title}. Explain why it was flagged, which evidence is missing or unverified, and the required next human step. Do not approve corrections, change status, or treat missing evidence as verified.`
+                        )
+                      }
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[#E53C2E] rounded hover:bg-[#CC3124] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E53C2E] cursor-pointer whitespace-nowrap"
                     >
-                      {aiLoading ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Sparkles className="w-3.5 h-3.5 text-[#E53C2E]" />
-                      )}
-                      <span>{aiLoading ? 'Analyzing…' : 'Analyze with AI'}</span>
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Analyze with AI</span>
                     </button>
                   </div>
                 </div>
@@ -1024,7 +1043,7 @@ export const InvestigationsPage: React.FC = () => {
                     },
                     {
                       id: 'actions',
-                      label: `Actions & AI`,
+                      label: 'Action Steps',
                     },
                   ] as const
                 ).map((tab) => {
