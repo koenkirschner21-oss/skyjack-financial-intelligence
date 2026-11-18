@@ -15,7 +15,6 @@ import {
   DOMESTIC_SHIPMENT_RECORDS,
   HISTORICAL_TRADE_COSTS,
   IRREGULAR_COSTS,
-  REPORTING_PERIODS,
 } from '../data/caseSeed';
 import { useApp } from '../context/AppContext';
 import {
@@ -40,6 +39,21 @@ type SortField =
   | 'brokerVarianceReportedCad'
   | 'totalCost';
 type BrokerFilter = 'all' | 'overcharge' | 'undercharge' | 'compliant';
+const KpiCard: React.FC<{
+  label: string;
+  value: string;
+  note?: string;
+  tone?: 'neutral' | 'adverse';
+}> = ({ label, value, note, tone = 'neutral' }) => (
+  <div className="bg-white border border-[#E2E5E8] rounded-md p-3 h-full">
+    <div className="text-xs font-medium text-[#5F6368]">{label}</div>
+    <div className={`text-xl font-semibold tabular-nums mt-1 ${tone === 'adverse' ? 'text-[#DC2626]' : 'text-[#231F20]'}`}>
+      {value}
+    </div>
+    {note && <div className="text-[11px] text-[#5F6368] mt-1 leading-snug">{note}</div>}
+  </div>
+);
+
 type EntryFlagFilter =
   | 'all'
   | 'china_tariff'
@@ -54,13 +68,11 @@ export const TradePage: React.FC = () => {
     activeUser,
     hasPermission,
     navigate,
-    setQuarterFilter,
     scopedCustomsEntries,
     openDrawer,
     sendEntriesToSimulator,
     openReportStudioWithPreset,
     formatMoney,
-    formatCompactMoney,
     formatShortMoney,
   } = useApp();
 
@@ -108,11 +120,6 @@ export const TradePage: React.FC = () => {
   const allowed = hasPermission('view_trade');
   const canRunSimulator = hasPermission('run_tariff_simulator');
 
-  const selectedPeriod = useMemo(
-    () => REPORTING_PERIODS.find((p) => p.id === state.selectedQuarterId) ?? REPORTING_PERIODS[7],
-    [state.selectedQuarterId]
-  );
-
   // Shared KPI summary derived deterministically from scopedCustomsEntries
   const sharedKpis = useMemo(() => {
     let goodsValueCad = 0;
@@ -152,6 +159,7 @@ export const TradePage: React.FC = () => {
       importCount,
       exportCount,
       goodsValueCad,
+      dutyAndTariffCad,
       exactTradeCostCad: dutyAndTariffCad + brokerChargedCad,
       q3RoundedRef,
       brokerExpectedCad,
@@ -358,7 +366,7 @@ export const TradePage: React.FC = () => {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <PageHeader
         title="Shipments & Trade"
         actions={
@@ -380,7 +388,7 @@ export const TradePage: React.FC = () => {
                 onClick={() =>
                   openReportStudioWithPreset({
                     templateId: 'trade_tariff_review',
-                    reportingPeriod: state.selectedQuarterId,
+                    reportingPeriod: 'Q3 2026',
                     includedSections: [
                       'trd_customs_summary',
                       'trd_historical_trends',
@@ -450,72 +458,6 @@ export const TradePage: React.FC = () => {
         }
       />
 
-      {/* Quarter Granularity Notice when historical period selected */}
-      {!selectedPeriod.hasDetailedCustomsEntries && (
-        <div className="bg-amber-50/80 border border-amber-200 rounded-md px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-950">
-          <span>
-            Detailed entry-level customs records are supplied exclusively for <strong>Q3 2026</strong>.{' '}
-            <strong>{state.selectedQuarterId}</strong> displays aggregate historical trade cost totals only.
-          </span>
-          <button
-            type="button"
-            onClick={() => setQuarterFilter('Q3 2026')}
-            className="px-2.5 py-1 bg-white border border-amber-300 rounded font-medium text-amber-950 hover:bg-amber-100 cursor-pointer"
-          >
-            Switch to Q3 2026
-          </button>
-        </div>
-      )}
-
-      {/* Shared 4-KPI Summary Strip (Q3 2026 Baseline) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <div className="bg-white border border-[#E2E5E8] rounded-md p-4">
-          <div className="text-xs font-medium text-[#5F6368]">Customs Entries (Q3 2026)</div>
-          <div className="text-2xl font-semibold font-mono tabular-nums text-[#231F20] mt-1">
-            {sharedKpis.entryCount}
-          </div>
-          <div className="text-[11px] text-[#5F6368] mt-1">
-            {sharedKpis.importCount} imports · {sharedKpis.exportCount} exports
-          </div>
-        </div>
-
-        <div
-          className="bg-white border border-[#E2E5E8] rounded-md p-4"
-          title={`Exact goods value: ${formatMoney(sharedKpis.goodsValueCad)}`}
-        >
-          <div className="text-xs font-medium text-[#5F6368]">Declared Goods Value</div>
-          <div className="text-2xl font-semibold font-mono tabular-nums text-[#231F20] mt-1">
-            {formatMoney(sharedKpis.goodsValueCad)}
-          </div>
-          <div className="text-[11px] text-[#5F6368] mt-1 font-mono">
-            {formatCompactMoney(sharedKpis.goodsValueCad)} across {sharedKpis.entryCount} shipments
-          </div>
-        </div>
-
-        <div
-          className="bg-white border border-[#E2E5E8] rounded-md p-4"
-          title={`Exact Q3 trade costs: ${formatMoney(sharedKpis.exactTradeCostCad)}`}
-        >
-          <div className="text-xs font-medium text-[#5F6368]">Exact Q3 Trade Costs</div>
-          <div className="text-2xl font-semibold font-mono tabular-nums text-[#231F20] mt-1">
-            {formatMoney(sharedKpis.exactTradeCostCad)}
-          </div>
-          <div className="text-[11px] text-[#5F6368] mt-1 font-mono">
-            8-qtr rounded series: {formatCompactMoney(sharedKpis.q3RoundedRef)}
-          </div>
-        </div>
-
-        <div className="bg-white border border-[#E2E5E8] rounded-md p-4">
-          <div className="text-xs font-medium text-[#5F6368]">Broker Net Variance</div>
-          <div className="text-2xl font-semibold font-mono tabular-nums text-[#DC2626] mt-1">
-            {formatMoney(sharedKpis.netBrokerVarianceCad, { showSign: true })}
-          </div>
-          <div className="text-[11px] text-[#5F6368] mt-1 font-mono">
-            vs. 0.2% contract · Gross {formatMoney(sharedKpis.grossOverchargeCad, { showSign: true })}
-          </div>
-        </div>
-      </div>
-
       {/* Four-Tab Switcher */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div
@@ -548,14 +490,82 @@ export const TradePage: React.FC = () => {
           ))}
         </div>
 
-        <div className="text-[11px] text-[#5F6368] font-mono">
-          Active Period: <span className="font-semibold text-[#231F20]">{state.selectedQuarterId}</span> · {state.currency}
+        <div
+          className="inline-flex items-center gap-2 bg-white border border-[#E2E5E8] rounded-md px-2.5 py-1.5 text-[#5F6368]"
+          aria-label="Reporting period Q3 2026"
+        >
+          <span className="text-[11px] font-medium">Period</span>
+          <span className="text-xs font-semibold text-[#231F20]">Q3 2026</span>
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {activeTab === 'entries' && (
+          <>
+            <KpiCard label="Customs Entries" value={String(sharedKpis.entryCount)} note={`${sharedKpis.importCount} imports · ${sharedKpis.exportCount} exports`} />
+            <KpiCard label="Imported Goods Value" value={formatMoney(sharedKpis.goodsValueCad)} />
+            <KpiCard
+              label="Duties and Tariffs"
+              value={formatMoney(sharedKpis.dutyAndTariffCad)}
+              note={`With broker fees, trade cost is ${formatMoney(sharedKpis.exactTradeCostCad)}`}
+            />
+            <KpiCard label="Actual Broker Fees" value={formatMoney(sharedKpis.brokerChargedCad)} note="Excluded from duties and tariffs" />
+          </>
+        )}
+        {activeTab === 'broker' && (
+          <>
+            <KpiCard label="Expected Broker Fees" value={formatMoney(sharedKpis.brokerExpectedCad)} note="0.2% of goods value" />
+            <KpiCard label="Actual Broker Fees" value={formatMoney(sharedKpis.brokerChargedCad)} note="Invoiced on E-01–E-12" />
+            <KpiCard label="Gross Overcharges" value={formatMoney(sharedKpis.grossOverchargeCad)} note="Over-contract amounts only" />
+            <KpiCard
+              label="Net Broker Variance"
+              value={formatMoney(sharedKpis.netBrokerVarianceCad, { showSign: true })}
+              note={`E-11 undercharge ${formatMoney(Math.abs(sharedKpis.underchargeCad))} is separate`}
+              tone={sharedKpis.netBrokerVarianceCad > 0 ? 'adverse' : 'neutral'}
+            />
+          </>
+        )}
+        {activeTab === 'agreements' && (
+          <>
+            <KpiCard
+              label="Preferential Claims"
+              value={String(agreementGroups.claimedCusma.length + agreementGroups.claimedCptpp.length)}
+              note="CUSMA and CPTPP claims recorded on the entry"
+            />
+            <KpiCard
+              label="Evidence to Verify"
+              value={String(agreementGroups.unclaimedCusma.length)}
+              note="E-08 origin certificate is not confirmed"
+            />
+            <KpiCard
+              label="Potential Duty Review"
+              value={formatMoney(agreementGroups.unclaimedCusma.reduce((sum, entry) => sum + entry.mfnDutyCad, 0))}
+              note="Unconfirmed. Not recovered cash."
+            />
+            <KpiCard
+              label="Standard Treatment"
+              value={String(agreementGroups.mfnAndExportDdp.length)}
+              note="MFN, China tariff, or DDP with no preferential claim"
+            />
+          </>
+        )}
+        {activeTab === 'domestic' && (
+          <>
+            <KpiCard label="Domestic Sales" value={formatMoney(domesticTotals.sales)} note="Interprovincial shipments" />
+            <KpiCard label="Sales Tax" value={formatMoney(domesticTotals.salesTax)} note="GST, PST, QST, and HST" />
+            <KpiCard label="Domestic Freight" value={formatMoney(domesticTotals.freight)} note="Carrier charges, not customs duty" />
+            <KpiCard
+              label="Shipment Coverage"
+              value={String(DOMESTIC_SHIPMENT_RECORDS.length)}
+              note={`Customs duty ${formatMoney(domesticTotals.customsDuty)}`}
+            />
+          </>
+        )}
       </div>
 
       {/* TAB 1: CUSTOMS ENTRIES */}
       {activeTab === 'entries' && (
-        <div className="space-y-5">
+        <div className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
             <div className="lg:col-span-7 bg-white border border-[#E2E5E8] rounded-md p-4 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -564,15 +574,15 @@ export const TradePage: React.FC = () => {
                     Eight-Quarter Trade Cost History
                   </h2>
                   <p className="text-[11px] text-[#5F6368]">
-                    Rounded 000s series highlighting Q1 2026 additional China tariff onset ({state.currency})
+                    Rounded historical series. Entry detail stays on Q3 2026.
                   </p>
                 </div>
                 <ProvenanceText provenance="official_case_data" sourceRef="Appendix 3.6 (000s)" />
               </div>
               <TradeCostTrendChart
                 history={HISTORICAL_TRADE_COSTS}
-                selectedQuarterId={state.selectedQuarterId}
-                onSelectQuarter={setQuarterFilter}
+                selectedQuarterId="Q3 2026"
+                onSelectQuarter={() => undefined}
               />
             </div>
 
@@ -584,7 +594,7 @@ export const TradePage: React.FC = () => {
                       Q3 2026 Trade Cost Composition
                     </h2>
                     <p className="text-[11px] text-[#5F6368]">
-                      100% stacked breakdown of duties, additional tariffs, and broker fees
+                      Duties, tariffs, and broker fees. Combined total {formatMoney(sharedKpis.exactTradeCostCad)}.
                     </p>
                   </div>
                   <ProvenanceText provenance="official_case_data" sourceRef="Appendix 3.1" />
@@ -592,7 +602,7 @@ export const TradePage: React.FC = () => {
 
                 <TradeCostCompositionChart
                   entries={scopedCustomsEntries}
-                  selectedQuarterId={state.selectedQuarterId}
+                  selectedQuarterId="Q3 2026"
                   activeFilterKey={compositionKey}
                   onSelectCategory={handleCompositionSelect}
                 />
@@ -901,7 +911,7 @@ export const TradePage: React.FC = () => {
 
       {/* TAB 2: BROKER AUDIT */}
       {activeTab === 'broker' && (
-        <div className="space-y-5">
+        <div className="space-y-4">
           {/* Two Functional Broker Audit Visualizations */}
           <BrokerAuditCharts
             entries={scopedCustomsEntries}
@@ -1073,7 +1083,7 @@ export const TradePage: React.FC = () => {
 
       {/* TAB 3: TRADE AGREEMENTS */}
       {activeTab === 'agreements' && (
-        <div className="space-y-5">
+        <div className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Claimed Preferential Treatment */}
             <section className="bg-white border border-[#E2E5E8] rounded-md p-4 space-y-3">
@@ -1165,7 +1175,7 @@ export const TradePage: React.FC = () => {
                   </div>
 
                   <p className="text-[11px] text-[#5F6368] leading-relaxed">
-                    Origin certificate located in email (Case p. 3), but formal customs verification is required before claiming CUSMA 0% eligibility. Never auto-approved or counted as guaranteed savings.
+                    Applicable agreement is unconfirmed CUSMA. The origin certificate is on file and still requires verification. Duty paid is a potential review, not a confirmed exemption or recovered cash.
                   </p>
 
                   <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -1295,50 +1305,7 @@ export const TradePage: React.FC = () => {
 
       {/* TAB 4: DOMESTIC SHIPMENTS */}
       {activeTab === 'domestic' && (
-        <div className="space-y-5">
-          {/* Domestic Summary KPI Strip */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-            <div className="bg-white border border-[#E2E5E8] rounded-md p-4">
-              <div className="text-xs font-medium text-[#5F6368]">Domestic Sales</div>
-              <div className="text-2xl font-semibold font-mono tabular-nums text-[#231F20] mt-1">
-                {formatMoney(domesticTotals.sales)}
-              </div>
-              <div className="text-[11px] text-[#5F6368] mt-1">
-                5 interprovincial Canadian destinations
-              </div>
-            </div>
-
-            <div className="bg-white border border-[#E2E5E8] rounded-md p-4">
-              <div className="text-xs font-medium text-[#5F6368]">Provincial Sales Tax</div>
-              <div className="text-2xl font-semibold font-mono tabular-nums text-[#231F20] mt-1">
-                {formatMoney(domesticTotals.salesTax)}
-              </div>
-              <div className="text-[11px] text-[#5F6368] mt-1">
-                GST, PST, QST &amp; HST (isolated from customs)
-              </div>
-            </div>
-
-            <div className="bg-white border border-[#E2E5E8] rounded-md p-4">
-              <div className="text-xs font-medium text-[#5F6368]">Domestic Freight</div>
-              <div className="text-2xl font-semibold font-mono tabular-nums text-[#231F20] mt-1">
-                {formatMoney(domesticTotals.freight)}
-              </div>
-              <div className="text-[11px] text-[#5F6368] mt-1">
-                Interprovincial carrier charges
-              </div>
-            </div>
-
-            <div className="bg-white border border-[#E2E5E8] rounded-md p-4">
-              <div className="text-xs font-medium text-[#5F6368]">Customs Duty</div>
-              <div className="text-2xl font-semibold font-mono tabular-nums text-[#16A34A] mt-1">
-                {formatMoney(domesticTotals.customsDuty)}
-              </div>
-              <div className="text-[11px] text-[#5F6368] mt-1">
-                Never mixed into international trade totals
-              </div>
-            </div>
-          </div>
-
+        <div className="space-y-4">
           <DomesticProvincialChart records={DOMESTIC_SHIPMENT_RECORDS} />
 
           {/* Domestic Shipment Register */}

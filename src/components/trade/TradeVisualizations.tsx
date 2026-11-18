@@ -281,7 +281,7 @@ export const BrokerAuditCharts: React.FC<BrokerAuditChartsProps> = ({
   return (
     <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
       {/* Visual A: Expected vs Actual Fee Comparison */}
-      <div className="xl:col-span-5 bg-white border border-[#E2E5E8] rounded-md p-4 flex flex-col justify-between space-y-4">
+      <div className="xl:col-span-5 bg-white border border-[#E2E5E8] rounded-md p-3 flex flex-col justify-between space-y-3">
         <div className="space-y-1">
           <h3 className="text-sm font-semibold text-[#231F20]">
             Expected vs. Actual Broker Fees
@@ -291,7 +291,7 @@ export const BrokerAuditCharts: React.FC<BrokerAuditChartsProps> = ({
           </p>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-xs">
               <span className="font-medium text-[#231F20]">Expected at 0.2% Contract</span>
@@ -373,7 +373,7 @@ export const BrokerAuditCharts: React.FC<BrokerAuditChartsProps> = ({
       </div>
 
       {/* Visual B: Diverging Horizontal Variance-by-Entry Chart */}
-      <div className="xl:col-span-7 bg-white border border-[#E2E5E8] rounded-md p-4 space-y-3">
+      <div className="xl:col-span-7 bg-white border border-[#E2E5E8] rounded-md p-3 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h3 className="text-sm font-semibold text-[#231F20]">
@@ -501,10 +501,11 @@ export const DomesticProvincialChart: React.FC<DomesticProvincialChartProps> = (
   records,
 }) => {
   const { formatMoney, formatCompactMoney } = useApp();
-  const [metric, setMetric] = useState<'tax_and_freight' | 'sales'>('tax_and_freight');
+  const [metric, setMetric] = useState<'sales' | 'freight'>('sales');
 
   const maxSales = Math.max(1, ...records.map((r) => r.salesCad));
-  const maxTaxFreight = Math.max(1, ...records.map((r) => r.salesTaxCad + r.freightCad));
+  const maxFreight = Math.max(1, ...records.map((r) => r.freightCad));
+  const freightTotal = records.reduce((sum, record) => sum + record.freightCad, 0);
 
   return (
     <div className="bg-white border border-[#E2E5E8] rounded-md p-4 space-y-3">
@@ -520,17 +521,6 @@ export const DomesticProvincialChart: React.FC<DomesticProvincialChartProps> = (
         <div className="inline-flex p-0.5 bg-[#ECEEF0] rounded border border-[#E2E5E8]">
           <button
             type="button"
-            onClick={() => setMetric('tax_and_freight')}
-            className={`px-2.5 py-1 text-xs font-medium rounded cursor-pointer ${
-              metric === 'tax_and_freight'
-                ? 'bg-white text-[#231F20] shadow-2xs'
-                : 'text-[#5F6368]'
-            }`}
-          >
-            Sales Tax &amp; Freight
-          </button>
-          <button
-            type="button"
             onClick={() => setMetric('sales')}
             className={`px-2.5 py-1 text-xs font-medium rounded cursor-pointer ${
               metric === 'sales' ? 'bg-white text-[#231F20] shadow-2xs' : 'text-[#5F6368]'
@@ -538,14 +528,21 @@ export const DomesticProvincialChart: React.FC<DomesticProvincialChartProps> = (
           >
             Domestic Sales
           </button>
+          <button
+            type="button"
+            onClick={() => setMetric('freight')}
+            className={`px-2.5 py-1 text-xs font-medium rounded cursor-pointer ${
+              metric === 'freight' ? 'bg-white text-[#231F20] shadow-2xs' : 'text-[#5F6368]'
+            }`}
+          >
+            Freight
+          </button>
         </div>
       </div>
 
       <div className="space-y-2.5 pt-1">
         {records.map((r) => {
-          const totalTaxFreight = r.salesTaxCad + r.freightCad;
-          const taxPct = (r.salesTaxCad / maxTaxFreight) * 100;
-          const freightPct = (r.freightCad / maxTaxFreight) * 100;
+          const freightPct = (r.freightCad / maxFreight) * 100;
           const salesPct = (r.salesCad / maxSales) * 100;
 
           return (
@@ -558,55 +555,27 @@ export const DomesticProvincialChart: React.FC<DomesticProvincialChartProps> = (
                   </span>
                 </span>
                 <span className="font-mono tabular-nums text-[#231F20] font-semibold">
-                  {metric === 'tax_and_freight' ? (
-                    <>
-                      Tax {formatMoney(r.salesTaxCad)}{' '}
-                      <span className="text-[#5F6368] font-normal">
-                        + Freight {formatMoney(r.freightCad)}
-                      </span>
-                    </>
-                  ) : (
-                    formatCompactMoney(r.salesCad)
-                  )}
+                  {metric === 'freight' ? formatMoney(r.freightCad) : formatCompactMoney(r.salesCad)}
                 </span>
               </div>
 
-              {metric === 'tax_and_freight' ? (
-                <div className="h-2.5 bg-[#ECEEF0] rounded overflow-hidden flex">
-                  <div
-                    className="h-full bg-[#231F20]"
-                    style={{ width: `${taxPct}%` }}
-                    title={`Sales Tax: ${formatMoney(r.salesTaxCad)}`}
-                  />
-                  <div
-                    className="h-full bg-[#E53C2E]"
-                    style={{ width: `${freightPct}%` }}
-                    title={`Domestic Freight: ${formatMoney(r.freightCad)}`}
-                  />
-                </div>
-              ) : (
-                <div className="h-2.5 bg-[#ECEEF0] rounded overflow-hidden">
-                  <div
-                    className="h-full bg-[#231F20] rounded"
-                    style={{ width: `${salesPct}%` }}
-                    title={`Domestic Sales: ${formatMoney(r.salesCad)}`}
-                  />
-                </div>
-              )}
+              <div className="h-2.5 bg-[#ECEEF0] rounded overflow-hidden">
+                <div
+                  className={`h-full rounded ${metric === 'freight' ? 'bg-[#E53C2E]' : 'bg-[#231F20]'}`}
+                  style={{ width: `${metric === 'freight' ? freightPct : salesPct}%` }}
+                  title={metric === 'freight' ? `Domestic Freight: ${formatMoney(r.freightCad)}` : `Domestic Sales: ${formatMoney(r.salesCad)}`}
+                />
+              </div>
             </div>
           );
         })}
       </div>
 
-      {metric === 'tax_and_freight' && (
+      {metric === 'freight' && (
         <div className="flex flex-wrap items-center gap-4 text-[11px] text-[#5F6368] pt-1 border-t border-[#ECEEF0]">
           <span className="inline-flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-xs bg-[#231F20]" />
-            Provincial Sales Tax ({formatMoney(799_525)})
-          </span>
-          <span className="inline-flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-xs bg-[#E53C2E]" />
-            Domestic Freight ({formatMoney(95_400)})
+            Domestic Freight ({formatMoney(freightTotal)})
           </span>
         </div>
       )}
