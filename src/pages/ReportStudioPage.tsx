@@ -1,9 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   ArrowDown,
   ArrowUp,
-  CheckCircle2,
   ChevronDown,
   ChevronRight,
   Copy,
@@ -11,7 +10,6 @@ import {
   FileSpreadsheet,
   FileText,
   History,
-  Info,
   Layers,
   Loader2,
   Plus,
@@ -129,15 +127,12 @@ export const ReportStudioPage: React.FC = () => {
   const permittedSections = useMemo(() => getPermittedSectionsForUser(activeUser), [activeUser]);
 
   const [activeView, setActiveView] = useState<StudioView>('create');
-  const [templatesExpanded, setTemplatesExpanded] = useState(true);
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
   const [openEditorSection, setOpenEditorSection] = useState<EditorSectionKey>('setup');
   const [showAdvancedSetup, setShowAdvancedSetup] = useState(false);
   const [showKpiPicker, setShowKpiPicker] = useState(false);
   const [showSectionLibrary, setShowSectionLibrary] = useState(false);
   const [sectionSearch, setSectionSearch] = useState('');
-
-  const [showScopePopover, setShowScopePopover] = useState(false);
-  const scopePopoverRef = useRef<HTMLDivElement | null>(null);
 
   const [showExportHistory, setShowExportHistory] = useState(false);
   const [showSnapshots, setShowSnapshots] = useState(false);
@@ -146,7 +141,7 @@ export const ReportStudioPage: React.FC = () => {
   const [config, setConfig] = useState<ReportConfiguration>(() => {
     const firstTpl = permittedTemplates[0]?.id ?? 'custom_report';
     return buildDefaultReportConfig(firstTpl, activeUser, {
-      reportingPeriod: state.selectedQuarterId,
+      reportingPeriod: 'Q3 2026',
       regionFilter: 'all',
     });
   });
@@ -165,24 +160,6 @@ export const ReportStudioPage: React.FC = () => {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!showScopePopover) return;
-    const onMouseDown = (e: MouseEvent) => {
-      if (scopePopoverRef.current && !scopePopoverRef.current.contains(e.target as Node)) {
-        setShowScopePopover(false);
-      }
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowScopePopover(false);
-    };
-    document.addEventListener('mousedown', onMouseDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', onMouseDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [showScopePopover]);
-
   // Sync cross-module launch presets cleanly
   useEffect(() => {
     if (!reportPreset || !canGenerate) return;
@@ -199,7 +176,7 @@ export const ReportStudioPage: React.FC = () => {
     });
     setConfig(nextCfg);
     setActiveView('create');
-    setTemplatesExpanded(false);
+    setWizardStep(1);
     setActiveSlideIdx(0);
     setExportFeedback(null);
     clearReportPreset();
@@ -434,10 +411,12 @@ export const ReportStudioPage: React.FC = () => {
         sourceRecordRefs: targetModel.sourceRecordRefs,
         headlineMetrics: targetModel.selectedKpis.map((k) => ({ label: k.label, value: k.exactValue })),
       });
-      setExportFeedback({
-        type: 'success',
-        message: `Downloaded ${res.fileName} (${res.slideCount} editable slides, ${(res.byteSize / 1024).toFixed(1)} KB) to your device.`,
-      });
+      if (!downloaded) {
+        setExportFeedback({
+          type: 'error',
+          message: 'The PowerPoint was generated, but the browser did not start the download.',
+        });
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'PowerPoint generation failed.';
       recordReportExport({
@@ -477,10 +456,12 @@ export const ReportStudioPage: React.FC = () => {
         sourceRecordRefs: targetModel.sourceRecordRefs,
         headlineMetrics: targetModel.selectedKpis.map((k) => ({ label: k.label, value: k.exactValue })),
       });
-      setExportFeedback({
-        type: 'success',
-        message: `Downloaded ${res.fileName} (${res.sheetNames.length} worksheets, ${(res.byteSize / 1024).toFixed(1)} KB) to your device.`,
-      });
+      if (!downloaded) {
+        setExportFeedback({
+          type: 'error',
+          message: 'The workbook was generated, but the browser did not start the download.',
+        });
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Excel workbook generation failed.';
       setExportFeedback({ type: 'error', message: msg });
@@ -507,10 +488,12 @@ export const ReportStudioPage: React.FC = () => {
         sourceRecordRefs: reportModel.sourceRecordRefs,
         headlineMetrics: reportModel.selectedKpis.map((k) => ({ label: k.label, value: k.exactValue })),
       });
-      setExportFeedback({
-        type: 'success',
-        message: `Downloaded ${res.fileName} (${res.rowCount} rows) to your device.`,
-      });
+      if (!downloaded) {
+        setExportFeedback({
+          type: 'error',
+          message: 'The CSV was generated, but the browser did not start the download.',
+        });
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'CSV export failed.';
       setExportFeedback({ type: 'error', message: msg });
@@ -565,17 +548,7 @@ export const ReportStudioPage: React.FC = () => {
         <PageHeader
           title="Report Studio"
           actions={
-            <div className="flex flex-wrap items-center gap-2 relative" ref={scopePopoverRef}>
-              <button
-                type="button"
-                onClick={() => setShowScopePopover((prev) => !prev)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#5F6368] bg-white border border-[#E2E5E8] rounded hover:text-[#231F20] hover:bg-[#F8F9FA] cursor-pointer whitespace-nowrap"
-                aria-expanded={showScopePopover}
-              >
-                <Info className="w-3.5 h-3.5" />
-                <span>Scope &amp; Sources</span>
-              </button>
-
+            <div className="flex flex-wrap items-center gap-2 relative">
               <div
                 role="tablist"
                 aria-label="Report Studio views"
@@ -610,39 +583,6 @@ export const ReportStudioPage: React.FC = () => {
                   <span>My Reports ({savedReports.length})</span>
                 </button>
               </div>
-
-              {showScopePopover && (
-                <div className="absolute right-0 top-10 z-30 w-80 sm:w-96 bg-white border border-[#E2E5E8] rounded-md shadow-sm p-4 text-xs space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-semibold text-[#231F20]">
-                      {reportModel.policy.scopeTitle}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setShowScopePopover(false)}
-                      className="text-[#5F6368] hover:text-[#231F20] cursor-pointer"
-                      aria-label="Close scope information"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                  <p className="text-[11px] text-[#5F6368] leading-relaxed">
-                    {reportModel.policy.scopeDescription}
-                  </p>
-                  <div className="pt-2 border-t border-[#F0F1F3] text-[11px] text-[#5F6368] space-y-1">
-                    <div>
-                      Source: <strong className="text-[#231F20]">Authoritative Shared Repository</strong>
-                    </div>
-                    <div>
-                      Quarantined Excluded: <strong className="text-[#231F20]">{reportModel.scopedData.quarantinedCount}</strong> ·{' '}
-                      Authorized Uploads: <strong className="text-[#231F20]">{reportModel.scopedData.authorizedLedgerCount + reportModel.scopedData.authorizedCustomsCount}</strong>
-                    </div>
-                    <div>
-                      Exported files download directly to your local device; governance snapshots and audit records remain in the repository.
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           }
         />
@@ -650,106 +590,43 @@ export const ReportStudioPage: React.FC = () => {
         {/* VIEW 1: CREATE REPORT (Connected Template Selector + 35%/65% Builder & Preview) */}
         {activeView === 'create' && (
           <div className="space-y-4">
-            {/* Step 1: Compact Template Selection Strip */}
-            <section
-              aria-label="Report Templates"
-              className="bg-white border border-[#E2E5E8] rounded-md overflow-hidden"
-            >
-              <div className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E5E8] bg-[#F8F9FA]">
-                <div className="flex items-center gap-2 min-w-0 text-xs">
-                  <Layers className="w-3.5 h-3.5 text-[#E53C2E] shrink-0" />
-                  <span className="font-semibold text-[#231F20]">Templates</span>
-                  <span className="text-[#C8CACD]" aria-hidden="true">·</span>
-                  <span className="text-[#5F6368] truncate">
-                    Active: <strong className="text-[#231F20]">{activeTemplateSpec.title}</strong>
-                  </span>
-                </div>
+            <nav aria-label="Report creation steps" className="bg-white border border-[#E2E5E8] rounded-md px-3 py-2 flex flex-wrap items-center gap-2">
+              {([
+                [1, 'Template & Setup'],
+                [2, 'Report Contents'],
+                [3, 'Review & Export'],
+              ] as const).map(([step, label], index) => (
                 <button
+                  key={step}
                   type="button"
-                  onClick={() => setTemplatesExpanded((prev) => !prev)}
-                  className="inline-flex items-center gap-1 text-[11px] font-medium text-[#5F6368] hover:text-[#231F20] cursor-pointer whitespace-nowrap"
-                  aria-expanded={templatesExpanded}
+                  onClick={() => setWizardStep(step)}
+                  className={`inline-flex items-center gap-2 px-2.5 py-1.5 rounded text-xs cursor-pointer ${
+                    wizardStep === step ? 'bg-[#231F20] text-white' : 'text-[#5F6368] hover:text-[#231F20]'
+                  }`}
                 >
-                  <span>{templatesExpanded ? 'Hide templates' : 'Choose template'}</span>
-                  {templatesExpanded ? (
-                    <ChevronDown className="w-3.5 h-3.5" />
-                  ) : (
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  )}
+                  <span className="font-mono">{index + 1}</span>
+                  <span className="font-medium">{label}</span>
                 </button>
-              </div>
-
-              {templatesExpanded && (
-                <div className="p-3.5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5">
-                  {REPORT_TEMPLATES.map((tpl) => {
-                    const permitted = permittedTemplates.some((p) => p.id === tpl.id);
-                    const isSelected = config.templateId === tpl.id;
-                    return (
-                      <div
-                        key={tpl.id}
-                        className={`rounded-md border p-3.5 flex flex-col justify-between gap-2.5 transition-colors ${
-                          isSelected
-                            ? 'border-[#E53C2E] bg-[#FDF2F1]/50'
-                            : 'border-[#E2E5E8] bg-white hover:bg-[#F8F9FA]'
-                        } ${!permitted ? 'opacity-60' : ''}`}
-                      >
-                        <div className="space-y-1">
-                          <div className="flex items-start justify-between gap-2">
-                            <h2 className="text-xs font-semibold text-[#231F20] leading-snug">
-                              {tpl.title}
-                            </h2>
-                            <span className="text-[11px] font-mono tabular-nums text-[#5F6368] shrink-0">
-                              {tpl.defaultSections.length} sections
-                            </span>
-                          </div>
-                          <div className="text-[11px] text-[#5F6368] truncate">{tpl.audience}</div>
-                          <p className="text-[11px] text-[#5F6368] leading-relaxed line-clamp-2">
-                            {tpl.description}
-                          </p>
-                        </div>
-
-                        <div className="pt-1 flex items-center justify-between gap-2">
-                          {permitted ? (
-                            <button
-                              type="button"
-                              onClick={() => handleApplyTemplate(tpl.id)}
-                              className={`w-full py-1.5 px-3 rounded text-xs font-medium transition-colors cursor-pointer ${
-                                isSelected
-                                  ? 'bg-[#E53C2E] text-white'
-                                  : 'bg-[#231F20] text-white hover:bg-[#3A3536]'
-                              }`}
-                            >
-                              {isSelected ? 'Selected Starting Template' : 'Use Template'}
-                            </button>
-                          ) : (
-                            <span className="text-[11px] text-[#7E8082]">
-                              Outside {activeUser.title} role scope
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
+              ))}
+              <span className="ml-auto text-[11px] text-[#5F6368] truncate">{activeTemplateSpec.title}</span>
+            </nav>
 
             {/* Step 2 & 3: Balanced ~35% Report Editor (Left) / ~65% Live Preview & Export (Right) */}
-            <div className="grid grid-cols-1 lg:grid-cols-[minmax(330px,35%)_minmax(0,1fr)] gap-5 items-start">
-              {/* LEFT PANEL (~35%): Streamlined 3-Part Report Editor */}
+            <div className="grid grid-cols-1 gap-4 items-start">
+              {wizardStep < 3 && (
               <aside
                 aria-label="Report Editor"
                 className="bg-white border border-[#E2E5E8] rounded-md divide-y divide-[#E2E5E8] min-w-0"
               >
                 {/* SECTION A: REPORT SETUP */}
-                <div>
+                <div className={wizardStep === 1 ? undefined : 'hidden'}>
                   <button
                     type="button"
                     onClick={() =>
                       setOpenEditorSection((prev) => (prev === 'setup' ? 'contents' : 'setup'))
                     }
                     className="w-full px-4 py-3 flex items-center justify-between gap-2 text-left hover:bg-[#F8F9FA] cursor-pointer"
-                    aria-expanded={openEditorSection === 'setup'}
+                    aria-expanded={wizardStep === 1}
                   >
                     <div>
                       <div className="text-xs font-semibold text-[#231F20]">1. Report Setup</div>
@@ -762,14 +639,14 @@ export const ReportStudioPage: React.FC = () => {
                         {DATASET_SCOPE_LABELS[config.datasetScope]}
                       </div>
                     </div>
-                    {openEditorSection === 'setup' ? (
+                    {wizardStep === 1 ? (
                       <ChevronDown className="w-4 h-4 text-[#5F6368] shrink-0" />
                     ) : (
                       <ChevronRight className="w-4 h-4 text-[#5F6368] shrink-0" />
                     )}
                   </button>
 
-                  {openEditorSection === 'setup' && (
+                  {wizardStep === 1 && (
                     <div className="px-4 pb-4 pt-1 space-y-3 text-xs">
                       <label className="block space-y-1">
                         <span className="text-[11px] font-medium text-[#5F6368] block">
@@ -997,20 +874,30 @@ export const ReportStudioPage: React.FC = () => {
                             </div>
                           </div>
                         )}
+                        <p className="text-[11px] text-[#5F6368] leading-snug">{activeTemplateSpec.description}</p>
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => setWizardStep(2)}
+                            className="px-3 py-1.5 text-xs font-medium text-white bg-[#E53C2E] rounded hover:bg-[#CC3124] cursor-pointer"
+                          >
+                            Continue
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
                 </div>
 
                 {/* SECTION B: REPORT CONTENTS (Unified Metrics, Slide Order, Chart Types & Add Sections) */}
-                <div>
+                <div className={wizardStep === 2 ? undefined : 'hidden'}>
                   <button
                     type="button"
                     onClick={() =>
                       setOpenEditorSection((prev) => (prev === 'contents' ? 'finishing' : 'contents'))
                     }
                     className="w-full px-4 py-3 flex items-center justify-between gap-2 text-left hover:bg-[#F8F9FA] cursor-pointer"
-                    aria-expanded={openEditorSection === 'contents'}
+                    aria-expanded={wizardStep === 2}
                   >
                     <div>
                       <div className="text-xs font-semibold text-[#231F20]">
@@ -1020,14 +907,14 @@ export const ReportStudioPage: React.FC = () => {
                         {config.includedSections.length} modules · {reportModel.selectedKpis.length} summary metrics
                       </div>
                     </div>
-                    {openEditorSection === 'contents' ? (
+                    {wizardStep === 2 ? (
                       <ChevronDown className="w-4 h-4 text-[#5F6368] shrink-0" />
                     ) : (
                       <ChevronRight className="w-4 h-4 text-[#5F6368] shrink-0" />
                     )}
                   </button>
 
-                  {openEditorSection === 'contents' && (
+                  {wizardStep === 2 && (
                     <div className="px-4 pb-4 pt-1 space-y-3 text-xs">
                       {/* Executive Summary KPI Metrics Selector */}
                       <div className="border border-[#E2E5E8] rounded-md">
@@ -1314,192 +1201,31 @@ export const ReportStudioPage: React.FC = () => {
                           </div>
                         )}
                       </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* SECTION C: FINISHING TOUCHES */}
-                <div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setOpenEditorSection((prev) =>
-                        prev === 'finishing' ? 'setup' : 'finishing'
-                      )
-                    }
-                    className="w-full px-4 py-3 flex items-center justify-between gap-2 text-left hover:bg-[#F8F9FA] cursor-pointer"
-                    aria-expanded={openEditorSection === 'finishing'}
-                  >
-                    <div>
-                      <div className="text-xs font-semibold text-[#231F20]">
-                        3. Finishing Touches
-                      </div>
-                      <div className="text-[11px] text-[#5F6368]">
-                        Management commentary &amp; optional AI summary
-                      </div>
-                    </div>
-                    {openEditorSection === 'finishing' ? (
-                      <ChevronDown className="w-4 h-4 text-[#5F6368] shrink-0" />
-                    ) : (
-                      <ChevronRight className="w-4 h-4 text-[#5F6368] shrink-0" />
-                    )}
-                  </button>
-
-                  {openEditorSection === 'finishing' && (
-                    <div className="px-4 pb-4 pt-1 space-y-3.5 text-xs">
-                      <label className="block space-y-1">
-                        <span className="text-[11px] font-semibold text-[#231F20] block">
-                          Management Commentary
-                        </span>
-                        <textarea
-                          rows={3}
-                          value={config.managementCommentary ?? ''}
-                          onChange={(e) =>
-                            setConfig((prev) => ({
-                              ...prev,
-                              managementCommentary: e.target.value,
-                              modifiedAtIso: new Date().toISOString(),
-                            }))
-                          }
-                          placeholder="Add commentary or executive sign-off bullets (one per line)..."
-                          className="w-full border border-[#E2E5E8] rounded p-2 text-xs text-[#231F20] focus:outline-none focus:border-[#231F20]"
-                        />
-                      </label>
-
-                      <div className="pt-3 border-t border-[#F0F1F3] space-y-2.5">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <div className="text-xs font-semibold text-[#231F20]">
-                              AI Executive Summary
-                            </div>
-                            <div className="text-[11px] text-[#5F6368]">
-                              Drafted from current report figures; requires human review.
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            disabled={aiLoading}
-                            onClick={handleGenerateAiSummary}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-white bg-[#231F20] rounded hover:bg-[#3A3536] disabled:opacity-50 cursor-pointer shrink-0"
-                          >
-                            {aiLoading ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <Sparkles className="w-3.5 h-3.5 text-[#E53C2E]" />
-                            )}
-                            <span>{aiLoading ? 'Drafting…' : 'Draft Summary'}</span>
-                          </button>
-                        </div>
-
-                        {aiError && (
-                          <div className="p-2.5 bg-amber-50 border border-amber-200 rounded text-[11px] text-amber-950 flex items-start gap-2">
-                            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-[#B45309]" />
-                            <span>{aiError}</span>
-                          </div>
-                        )}
-
-                        {config.aiExecutiveSummary && (
-                          <div className="p-3 bg-[#F8F9FA] border border-[#E2E5E8] rounded space-y-2 text-xs">
-                            <div className="flex items-center justify-between gap-2 text-[10px] font-mono text-[#5F6368]">
-                              <span>AI-Generated Draft · {config.aiExecutiveSummary.modelName}</span>
-                              <span
-                                className={
-                                  config.aiExecutiveSummary.reviewedAndApprovedForExport
-                                    ? 'text-[#15803D] font-semibold'
-                                    : 'text-[#B45309]'
-                                }
-                              >
-                                {config.aiExecutiveSummary.reviewedAndApprovedForExport
-                                  ? 'Approved for export'
-                                  : 'Needs review'}
-                              </span>
-                            </div>
-
-                            <input
-                              type="text"
-                              value={config.aiExecutiveSummary.executiveHeadline}
-                              onChange={(e) =>
-                                setConfig((prev) =>
-                                  prev.aiExecutiveSummary
-                                    ? {
-                                        ...prev,
-                                        aiExecutiveSummary: {
-                                          ...prev.aiExecutiveSummary,
-                                          executiveHeadline: e.target.value,
-                                        },
-                                      }
-                                    : prev
-                                )
-                              }
-                              aria-label="AI executive summary headline"
-                              className="w-full border border-[#E2E5E8] bg-white rounded px-2 py-1 text-xs font-semibold"
-                            />
-                            <textarea
-                              rows={2}
-                              value={config.aiExecutiveSummary.financialPerformanceCommentary}
-                              onChange={(e) =>
-                                setConfig((prev) =>
-                                  prev.aiExecutiveSummary
-                                    ? {
-                                        ...prev,
-                                        aiExecutiveSummary: {
-                                          ...prev.aiExecutiveSummary,
-                                          financialPerformanceCommentary: e.target.value,
-                                        },
-                                      }
-                                    : prev
-                                )
-                              }
-                              aria-label="AI executive summary commentary"
-                              className="w-full border border-[#E2E5E8] bg-white rounded px-2 py-1 text-xs"
-                            />
-                            <label className="flex items-start gap-2 text-[11px] text-[#231F20] cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={config.aiExecutiveSummary.reviewedAndApprovedForExport}
-                                onChange={(e) =>
-                                  setConfig((prev) =>
-                                    prev.aiExecutiveSummary
-                                      ? {
-                                          ...prev,
-                                          aiExecutiveSummary: {
-                                            ...prev.aiExecutiveSummary,
-                                            reviewedAndApprovedForExport: e.target.checked,
-                                          },
-                                        }
-                                      : prev
-                                  )
-                                }
-                                className="mt-0.5 accent-[#E53C2E]"
-                              />
-                              <span>
-                                Verified against SKYJACK figures; include labeled AI synthesis slide in preview and exports.
-                              </span>
-                            </label>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="pt-2 border-t border-[#F0F1F3] flex items-center justify-between gap-2">
+                      <div className="flex items-center justify-between gap-2 pt-2">
                         <button
                           type="button"
-                          onClick={handleSaveConfig}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[#231F20] rounded hover:bg-[#3A3536] cursor-pointer"
+                          onClick={() => setWizardStep(1)}
+                          className="px-3 py-1.5 text-xs font-medium text-[#231F20] bg-white border border-[#E2E5E8] rounded cursor-pointer"
                         >
-                          <Save className="w-3.5 h-3.5" />
-                          <span>Save to My Reports</span>
+                          Back
                         </button>
-                        {savedNotice && (
-                          <span className="text-[11px] text-[#15803D] font-medium">Saved</span>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => setWizardStep(3)}
+                          className="px-3 py-1.5 text-xs font-medium text-white bg-[#E53C2E] rounded hover:bg-[#CC3124] cursor-pointer"
+                        >
+                          Continue
+                        </button>
                       </div>
                     </div>
                   )}
                 </div>
-              </aside>
 
-              {/* RIGHT PANEL (~65%, sticky on desktop): Consolidated Export Toolbar + Live 16:9 Preview */}
-              <div className="space-y-3 min-w-0 lg:sticky lg:top-4">
+              </aside>
+              )}
+
+              {wizardStep === 3 && (
+              <div className="space-y-3 min-w-0">
                 {/* Unified Export Toolbar */}
                 <section
                   aria-label="Report Export Actions"
@@ -1528,11 +1254,80 @@ export const ReportStudioPage: React.FC = () => {
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#231F20] bg-white border border-[#E2E5E8] rounded hover:bg-[#F8F9FA] cursor-pointer shrink-0"
                     >
                       <Save className="w-3.5 h-3.5" />
-                      <span>{savedNotice ? 'Saved' : 'Save'}</span>
+                      <span>{savedNotice ? 'Saved' : 'Save to My Reports'}</span>
                     </button>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-[#F0F1F3]">
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[#F0F1F3]">
+                    <button
+                      type="button"
+                      onClick={() => setWizardStep(2)}
+                      className="px-3 py-2 text-xs font-medium text-[#231F20] bg-white border border-[#E2E5E8] rounded cursor-pointer"
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      disabled={aiLoading}
+                      onClick={handleGenerateAiSummary}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#231F20] bg-white border border-[#E2E5E8] rounded hover:bg-[#F8F9FA] disabled:opacity-50 cursor-pointer"
+                    >
+                      {aiLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                      <span>{aiLoading ? 'Drafting…' : 'Generate Executive Summary'}</span>
+                    </button>
+                  </div>
+
+                  {aiError && (
+                    <div className="p-2.5 rounded border border-amber-200 bg-amber-50 text-[11px] text-amber-950">
+                      AI executive summary is unavailable. {aiError}
+                    </div>
+                  )}
+                  {config.aiExecutiveSummary && (
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] text-[#5F6368]">
+                        AI-assisted commentary from {config.aiExecutiveSummary.modelName}. It does not change official records and stays out of the export until you approve it.
+                      </p>
+                      <p className="text-xs font-medium text-[#231F20]">{config.aiExecutiveSummary.executiveHeadline}</p>
+                      <p className="text-[11px] text-[#231F20] leading-snug">{config.aiExecutiveSummary.financialPerformanceCommentary}</p>
+                      <p className="text-[11px] text-[#5F6368] leading-snug">{config.aiExecutiveSummary.hypotheticalDisclaimer}</p>
+                      <label className="flex items-start gap-2 text-[11px] text-[#231F20] cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={config.aiExecutiveSummary.reviewedAndApprovedForExport}
+                          onChange={(e) =>
+                            setConfig((prev) =>
+                              prev.aiExecutiveSummary
+                                ? {
+                                    ...prev,
+                                    aiExecutiveSummary: {
+                                      ...prev.aiExecutiveSummary,
+                                      reviewedAndApprovedForExport: e.target.checked,
+                                    },
+                                  }
+                                : prev
+                            )
+                          }
+                          className="mt-0.5 accent-[#E53C2E]"
+                        />
+                        <span>Reviewed against SKYJACK figures. Include this labeled AI commentary in the preview and export.</span>
+                      </label>
+                    </div>
+                  )}
+
+                  {exportFeedback?.type === 'error' && (
+                    <div className="p-2.5 rounded border text-xs flex items-center gap-2 bg-red-50 border-red-200 text-[#DC2626]">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>{exportFeedback.message}</span>
+                    </div>
+                  )}
+                </section>
+
+                {/* Live 16:9 Slide Preview Canvas */}
+                <section
+                  aria-label="Live Report Preview"
+                  className="bg-white border border-[#E2E5E8] rounded-md p-4 space-y-3"
+                >
+                  <div className="flex flex-wrap items-center justify-end gap-2">
                     <button
                       type="button"
                       disabled={Boolean(exportingFormat)}
@@ -1544,27 +1339,45 @@ export const ReportStudioPage: React.FC = () => {
                       ) : (
                         <Presentation className="w-3.5 h-3.5" />
                       )}
-                      <span>
-                        {exportingFormat === 'pptx' ? 'Generating .pptx…' : 'Export PowerPoint (.pptx)'}
-                      </span>
+                      <span>{exportingFormat === 'pptx' ? 'Generating .pptx…' : 'Export PowerPoint'}</span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setPrintModalOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-[#E53C2E] rounded hover:bg-[#C93023] cursor-pointer whitespace-nowrap"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      <span>Print / PDF</span>
+                    </button>
+                  </div>
+                  <ReportPresentationPreview
+                    model={reportModel}
+                    activeSlideIdx={activeSlideIdx}
+                    onSelectSlide={setActiveSlideIdx}
+                  />
+                </section>
 
+                <section aria-label="Supporting Data" className="bg-white border border-[#E2E5E8] rounded-md p-4 space-y-2">
+                  <h2 className="text-sm font-semibold text-[#231F20]">Supporting Data</h2>
+                  <p className="text-[11px] text-[#5F6368]">
+                    Workbook and dataset files are separate from the presentation.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
                       disabled={Boolean(exportingFormat) || !reportModel.policy.allowExecutiveWorkbook}
                       onClick={() => handleExportXlsx(reportModel)}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-[#231F20] rounded hover:bg-[#3A3536] disabled:opacity-50 transition-colors cursor-pointer whitespace-nowrap"
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#231F20] bg-white border border-[#E2E5E8] rounded hover:bg-[#F8F9FA] disabled:opacity-50 cursor-pointer"
                     >
                       <FileSpreadsheet className="w-3.5 h-3.5" />
                       <span>Excel (.xlsx)</span>
                     </button>
-
-                    <div className="inline-flex items-center gap-1 border border-[#E2E5E8] rounded bg-[#F8F9FA] p-0.5 max-w-full">
+                    <div className="inline-flex items-center gap-1 border border-[#E2E5E8] rounded bg-[#F8F9FA] p-0.5">
                       <select
                         aria-label="Select CSV dataset"
                         value={selectedCsvKey}
                         onChange={(e) => setSelectedCsvKey(e.target.value as ReportDatasetExportKey)}
-                        className="bg-transparent px-2 py-1 text-xs text-[#231F20] focus:outline-none max-w-[200px] truncate"
+                        className="bg-transparent px-2 py-1 text-xs text-[#231F20] focus:outline-none max-w-[220px]"
                       >
                         {reportModel.policy.allowedCsvDatasets.map((k) => (
                           <option key={k} value={k}>
@@ -1576,53 +1389,16 @@ export const ReportStudioPage: React.FC = () => {
                         type="button"
                         disabled={Boolean(exportingFormat)}
                         onClick={handleExportCsv}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-white border border-[#E2E5E8] rounded hover:bg-[#ECEEF0] cursor-pointer whitespace-nowrap"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-white border border-[#E2E5E8] rounded cursor-pointer"
                       >
                         <Download className="w-3 h-3" />
                         <span>CSV</span>
                       </button>
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setPrintModalOpen(true)}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#231F20] bg-white border border-[#E2E5E8] rounded hover:bg-[#F8F9FA] cursor-pointer whitespace-nowrap"
-                    >
-                      <Printer className="w-3.5 h-3.5" />
-                      <span>Print / PDF</span>
-                    </button>
                   </div>
-
-                  {exportFeedback && (
-                    <div
-                      className={`p-2.5 rounded border text-xs flex items-center gap-2 ${
-                        exportFeedback.type === 'success'
-                          ? 'bg-emerald-50 border-emerald-200 text-[#15803D]'
-                          : 'bg-red-50 border-red-200 text-[#DC2626]'
-                      }`}
-                    >
-                      {exportFeedback.type === 'success' ? (
-                        <CheckCircle2 className="w-4 h-4 shrink-0" />
-                      ) : (
-                        <AlertCircle className="w-4 h-4 shrink-0" />
-                      )}
-                      <span>{exportFeedback.message}</span>
-                    </div>
-                  )}
-                </section>
-
-                {/* Live 16:9 Slide Preview Canvas */}
-                <section
-                  aria-label="Live Report Preview"
-                  className="bg-white border border-[#E2E5E8] rounded-md p-4"
-                >
-                  <ReportPresentationPreview
-                    model={reportModel}
-                    activeSlideIdx={activeSlideIdx}
-                    onSelectSlide={setActiveSlideIdx}
-                  />
                 </section>
               </div>
+              )}
             </div>
           </div>
         )}
@@ -1630,20 +1406,10 @@ export const ReportStudioPage: React.FC = () => {
         {/* VIEW 2: MY REPORTS (Saved Configurations + Expandable History & Snapshots) */}
         {activeView === 'my_reports' && (
           <div className="space-y-4">
-            {exportFeedback && (
-              <div
-                className={`p-3 rounded-md border text-xs flex items-center justify-between gap-2 ${
-                  exportFeedback.type === 'success'
-                    ? 'bg-emerald-50 border-emerald-200 text-[#15803D]'
-                    : 'bg-red-50 border-red-200 text-[#DC2626]'
-                }`}
-              >
+            {exportFeedback?.type === 'error' && (
+              <div className="p-3 rounded-md border text-xs flex items-center justify-between gap-2 bg-red-50 border-red-200 text-[#DC2626]">
                 <div className="flex items-center gap-2">
-                  {exportFeedback.type === 'success' ? (
-                    <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4 shrink-0" />
-                  )}
+                  <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>{exportFeedback.message}</span>
                 </div>
                 <button
@@ -1675,7 +1441,7 @@ export const ReportStudioPage: React.FC = () => {
                   type="button"
                   onClick={() => {
                     setActiveView('create');
-                    setTemplatesExpanded(true);
+                    setWizardStep(1);
                   }}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[#E53C2E] rounded hover:bg-[#C93023] cursor-pointer whitespace-nowrap"
                 >
@@ -1748,7 +1514,7 @@ export const ReportStudioPage: React.FC = () => {
                                 onClick={() => {
                                   setConfig(rep);
                                   setActiveSlideIdx(0);
-                                  setTemplatesExpanded(false);
+                                  setWizardStep(1);
                                   setActiveView('create');
                                   setExportFeedback(null);
                                 }}
@@ -1950,9 +1716,6 @@ export const ReportStudioPage: React.FC = () => {
                     <span className="text-xs font-semibold text-[#231F20]">
                       Point-in-Time Export Snapshots ({snapshots.length})
                     </span>
-                    <span className="text-[11px] text-[#5F6368] ml-2">
-                      Immutable audit record of figures captured at export time
-                    </span>
                   </div>
                 </div>
                 <span className="inline-flex items-center gap-1 text-xs font-medium text-[#5F6368] shrink-0">
@@ -1969,7 +1732,7 @@ export const ReportStudioPage: React.FC = () => {
                 <div className="border-t border-[#E2E5E8]">
                   {snapshots.length === 0 ? (
                     <div className="p-5 text-xs text-[#5F6368]">
-                      No export snapshots recorded yet. Export a report from Create Report to capture a point-in-time snapshot.
+                      No exports recorded yet.
                     </div>
                   ) : (
                     <div className="overflow-x-auto">
