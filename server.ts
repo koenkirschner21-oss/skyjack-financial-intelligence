@@ -11,10 +11,89 @@ import { isServerSupabaseConfigured, requireApiUser } from './src/server/supabas
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const MODEL_NAME = 'gemini-4-hydrogen';
-const FALLBACK_MODEL_NAME = 'gemini-3.1-flash-lite';
+/** Official Gemini API model for generateContent. Override with GEMINI_MODEL. */
+const DEFAULT_MODEL_NAME = 'gemini-4-hydrogen';
+/** Cost-efficient official fallback. Override with GEMINI_FALLBACK_MODEL. */
+const DEFAULT_FALLBACK_MODEL_NAME = 'gemini-3.5-flash-lite';
+
+function configuredModel(value: string | undefined, fallback: string): string {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : fallback;
+}
+
+const MODEL_NAME = configuredModel(process.env.GEMINI_MODEL, DEFAULT_MODEL_NAME);
+const FALLBACK_MODEL_NAME = configuredModel(process.env.GEMINI_FALLBACK_MODEL, DEFAULT_FALLBACK_MODEL_NAME);
 const PORT = Number(process.env.PORT || 3000);
 let primaryDailyQuotaExhaustedUntil = 0;
+
+type GeminiFailureInfo = {
+  status: number;
+  errorCode: string;
+  errorCategory: string;
+  requestId: string;
+  userMessage: string;
+  retryable: boolean;
+  isDailyQuota: boolean;
+  switchModel: boolean;
+};
+
+function newRequestId(): string {
+  return `ai_${crypto.randomUUID()}`;
+}
+
+function sanitizeDiagnostic(value: string): string {
+  return value
+    .replace(/AIza[0-9A-Za-z\-_]{10,}/g, '[redacted]')
+    .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+    .replace(/\beyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+/g, '[redacted]')
+    .slice(0, 240);
+}
+
+function readErrorStatus(err: unknown): number | undefined {
+  if (err && typeof err === 'object') {
+    const record = err as { status?: unknown; statusCode?: unknown };
+    if (typeof record.status === 'number') return record.status;
+    if (typeof record.statusCode === 'number') return record.statusCode;
+  }
+  return undefined;
+}
+
+function publicAiMessage(category: string, status: number, requestId: string, summary: string): string {
+  return `${summary} [${category} HTTP ${status} ${requestId}]`;
+}
+
+/** Gemini 4 rejects MINIMAL. LOW is valid for Gemini 4 and Gemini 3 generateContent. */
+function thinkingConfigFor(modelName: string): { thinkingLevel: ThinkingLevel } {
+  if (modelName === 'gemini-3.5-flash-lite' || modelName.startsWith('gemini-3.5-flash-lite')) {
+    return { thinkingLevel: ThinkingLevel.MINIMAL };
+  }
+  return { thinkingLevel: ThinkingLevel.LOW };
+}
+
+function tableRowsFromModel(value: unknown): string[][] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 12).map((row) => {
+    if (Array.isArray(row)) {
+      return row.slice(0, 6).map((cell) => String(cell ?? ''));
+    }
+    return String(row)
+      .split('|')
+      .map((cell) => cell.trim())
+      .filter((cell) => cell.length > 0)
+      .slice(0, 6);
+  });
+}
+
+function aiErrorBody(info: Pick<GeminiFailureInfo, 'status' | 'errorCode' | 'errorCategory' | 'requestId' | 'userMessage'>) {
+  return {
+    ok: false as const,
+    errorCode: info.errorCode,
+    errorCategory: info.errorCategory,
+    status: info.status,
+    requestId: info.requestId,
+    userMessage: info.userMessage,
+  };
+}
 
 function getGeminiClient(): GoogleGenAI | null {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
@@ -33,58 +112,83 @@ function getGeminiClient(): GoogleGenAI | null {
 
 function classifyGeminiError(
   err: unknown,
-  activeModel = MODEL_NAME
-): { status: number; errorCode: string; userMessage: string; retryable: boolean; isDailyQuota: boolean } {
+  activeModel = MODEL_NAME,
+  requestId = newRequestId()
+): GeminiFailureInfo {
   const rawMsg = err instanceof Error ? err.message : String(err);
   const lower = rawMsg.toLowerCase();
+  const statusFromError = readErrorStatus(err);
+  const aborted = lower.includes('abort') || lower.includes('cancelled') || lower.includes('canceled');
 
-  if (lower.includes('429') || lower.includes('resource_exhausted') || lower.includes('rate limit') || lower.includes('quota')) {
-    const isDaily = lower.includes('perday') || lower.includes('daily') || lower.includes('per_day');
+  let status = statusFromError ?? 500;
+  let errorCode = 'AI_UPSTREAM_ERROR';
+  let errorCategory = 'AI_UPSTREAM_ERROR';
+  let summary = 'Unable to complete AI synthesis right now. Use Deterministic Fallback for verified numbers.';
+  let retryable = true;
+  let isDailyQuota = false;
+  let switchModel = false;
+
+  if (aborted) {
+    status = 499;
+    errorCode = 'REQUEST_CANCELLED';
+    errorCategory = 'REQUEST_CANCELLED';
+    summary = 'AI request cancelled by user.';
+    retryable = false;
+  } else if (
+    status === 429 ||
+    lower.includes('429') ||
+    lower.includes('resource_exhausted') ||
+    lower.includes('rate limit') ||
+    lower.includes('quota')
+  ) {
+    status = 429;
+    isDailyQuota = lower.includes('perday') || lower.includes('daily') || lower.includes('per_day');
+    errorCode = 'RATE_LIMITED';
+    errorCategory = isDailyQuota ? 'QUOTA_EXHAUSTED' : 'RATE_LIMITED';
     const retryMatch = rawMsg.match(/retry in\s+([0-9.hms]+)/i);
     const retryHint = retryMatch ? ` Retry suggested in ${retryMatch[1]}.` : '';
-    return {
-      status: 429,
-      errorCode: 'RATE_LIMITED',
-      userMessage: isDaily
-        ? `Gemini API free-tier daily quota reached for ${activeModel}. Check Settings > Secrets for a billing-enabled API key, or use Deterministic Non-AI Lookup below.`
-        : `Gemini AI rate limit reached on ${activeModel}.${retryHint} Please retry in a few moments or use Deterministic Non-AI Lookup below.`,
-      retryable: false,
-      isDailyQuota: isDaily,
-    };
+    summary = isDailyQuota
+      ? `Gemini API quota reached for ${activeModel}. Check Settings > Secrets for a billing-enabled API key, or use Deterministic Non-AI Lookup below.`
+      : `Gemini AI rate limit reached on ${activeModel}.${retryHint} Please retry in a few moments or use Deterministic Non-AI Lookup below.`;
+    retryable = false;
+    switchModel = true;
+  } else if (
+    status === 401 ||
+    status === 403 ||
+    lower.includes('permission_denied') ||
+    lower.includes('api_key_invalid') ||
+    lower.includes('api key')
+  ) {
+    status = status === 401 || status === 403 ? status : 401;
+    errorCode = 'API_KEY_INVALID';
+    errorCategory = 'AUTH_REJECTED';
+    summary = 'Gemini API access is not authorized in this environment. Check Settings > Secrets for GEMINI_API_KEY, or use Deterministic Fallback.';
+    retryable = false;
+  } else if (status === 404 || lower.includes('not_found') || lower.includes('not found') || lower.includes('is not supported')) {
+    status = 404;
+    errorCode = 'MODEL_NOT_FOUND';
+    errorCategory = 'MODEL_NOT_FOUND';
+    summary = `Configured model (${activeModel}) was not found for generateContent.`;
+    retryable = false;
+    switchModel = true;
+  } else if (status === 400 || lower.includes('invalid_argument') || lower.includes('invalid argument')) {
+    status = 400;
+    errorCode = 'INVALID_ARGUMENT';
+    errorCategory = 'INVALID_ARGUMENT';
+    summary = `Gemini rejected the ${activeModel} generateContent request.`;
+    retryable = false;
+    switchModel = true;
   }
-  if (lower.includes('403') || lower.includes('permission_denied') || lower.includes('api_key_invalid') || lower.includes('api key')) {
-    return {
-      status: 500,
-      errorCode: 'API_KEY_INVALID',
-      userMessage: 'Gemini API access is not authorized in this environment. Check Settings > Secrets for GEMINI_API_KEY, or use Deterministic Fallback.',
-      retryable: false,
-      isDailyQuota: false,
-    };
-  }
-  if (lower.includes('404') || lower.includes('not_found')) {
-    return {
-      status: 500,
-      errorCode: 'MODEL_NOT_FOUND',
-      userMessage: `Configured model (${activeModel}) was not found on the upstream endpoint. Falling back to deterministic lookup.`,
-      retryable: false,
-      isDailyQuota: false,
-    };
-  }
-  if (lower.includes('abort')) {
-    return {
-      status: 499,
-      errorCode: 'REQUEST_CANCELLED',
-      userMessage: 'AI request cancelled by user.',
-      retryable: false,
-      isDailyQuota: false,
-    };
-  }
+
   return {
-    status: 500,
-    errorCode: 'AI_UPSTREAM_ERROR',
-    userMessage: 'Unable to complete AI synthesis right now. Use Deterministic Fallback for verified numbers.',
-    retryable: true,
-    isDailyQuota: false,
+    status,
+    errorCode,
+    errorCategory,
+    requestId,
+    userMessage: publicAiMessage(errorCategory, status, requestId, summary),
+    retryable,
+    isDailyQuota,
+    switchModel,
   };
 }
 
@@ -118,19 +222,14 @@ function buildModelRequestParams(
   baseParams: Parameters<GoogleGenAI['models']['generateContent']>[0],
   modelName: string
 ): Parameters<GoogleGenAI['models']['generateContent']>[0] {
-  if (modelName === FALLBACK_MODEL_NAME) {
-    return {
-      ...baseParams,
-      model: modelName,
-      config: {
-        ...baseParams.config,
-        thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
-      },
-    };
-  }
   return {
     ...baseParams,
     model: modelName,
+    config: {
+      ...baseParams.config,
+      automaticContinuation: false,
+      thinkingConfig: thinkingConfigFor(modelName),
+    },
   };
 }
 
@@ -139,16 +238,29 @@ async function generateParsedJsonWithRetry<T>(
   requestParams: Parameters<GoogleGenAI['models']['generateContent']>[0],
   isValid: (parsed: T | null) => parsed is T,
   maxAttempts = 2
-): Promise<{ ok: true; data: T; modelName: string } | { ok: false; status: number; errorCode: string; userMessage: string }> {
+): Promise<{ ok: true; data: T; modelName: string } | ({ ok: false } & GeminiFailureInfo)> {
+  const requestId = newRequestId();
   const modelsToTry =
     Date.now() < primaryDailyQuotaExhaustedUntil
       ? [FALLBACK_MODEL_NAME]
-      : [MODEL_NAME, FALLBACK_MODEL_NAME];
+      : MODEL_NAME === FALLBACK_MODEL_NAME
+        ? [MODEL_NAME]
+        : [MODEL_NAME, FALLBACK_MODEL_NAME];
 
-  let lastFailure: { status: number; errorCode: string; userMessage: string } = {
+  let lastFailure: GeminiFailureInfo = {
     status: 500,
     errorCode: 'AI_UPSTREAM_ERROR',
-    userMessage: 'Unable to complete AI synthesis right now. Use Deterministic Fallback for verified numbers.',
+    errorCategory: 'AI_UPSTREAM_ERROR',
+    requestId,
+    userMessage: publicAiMessage(
+      'AI_UPSTREAM_ERROR',
+      500,
+      requestId,
+      'Unable to complete AI synthesis right now. Use Deterministic Fallback for verified numbers.'
+    ),
+    retryable: false,
+    isDailyQuota: false,
+    switchModel: false,
   };
 
   for (let mIdx = 0; mIdx < modelsToTry.length; mIdx++) {
@@ -160,43 +272,49 @@ async function generateParsedJsonWithRetry<T>(
         const response = await client.models.generateContent(effectiveParams);
         const parsed = parseModelJson<T>(response.text);
         if (isValid(parsed)) {
+          console.log(`[AI] ${requestId} generateContent ok model=${activeModel}`);
           return { ok: true, data: parsed, modelName: activeModel };
         }
         lastFailure = {
           status: 422,
           errorCode: 'INVALID_MODEL_RESPONSE',
-          userMessage: 'The AI model returned an incomplete structured response. Use Deterministic Non-AI Lookup below.',
+          errorCategory: 'INVALID_MODEL_RESPONSE',
+          requestId,
+          userMessage: publicAiMessage(
+            'INVALID_MODEL_RESPONSE',
+            422,
+            requestId,
+            'The AI model returned an incomplete structured response. Use Deterministic Non-AI Lookup below.'
+          ),
+          retryable: true,
+          isDailyQuota: false,
+          switchModel: false,
         };
+        console.log(`[AI] ${requestId} ${activeModel} incomplete JSON attempt ${attempt}/${maxAttempts}`);
         if (attempt < maxAttempts) {
           await sleepMs(450 * attempt);
           continue;
         }
-        return { ok: false, ...lastFailure };
       } catch (err) {
-        const info = classifyGeminiError(err, activeModel);
-        lastFailure = { status: info.status, errorCode: info.errorCode, userMessage: info.userMessage };
+        const info = classifyGeminiError(err, activeModel, requestId);
+        lastFailure = info;
+        const detail = sanitizeDiagnostic(err instanceof Error ? err.message : String(err));
+        console.log(
+          `[AI] ${requestId} model=${activeModel} category=${info.errorCategory} status=${info.status} attempt=${attempt}/${maxAttempts} detail=${detail}`
+        );
 
-        if (info.errorCode === 'RATE_LIMITED') {
-          if (activeModel === MODEL_NAME && info.isDailyQuota) {
-            primaryDailyQuotaExhaustedUntil = Date.now() + 5 * 60 * 1000;
-          }
-          const hasFallback = mIdx < modelsToTry.length - 1;
-          console.log(
-            `[AI] ${activeModel} rate limited (${info.isDailyQuota ? 'daily quota' : 'transient'})${hasFallback ? `; switching to ${modelsToTry[mIdx + 1]}` : ''}.`
-          );
-          break;
+        if (info.errorCode === 'API_KEY_INVALID' || info.errorCode === 'REQUEST_CANCELLED') {
+          return { ok: false, ...info };
         }
-
-        if (info.errorCode === 'API_KEY_INVALID' || info.errorCode === 'MODEL_NOT_FOUND' || info.errorCode === 'REQUEST_CANCELLED') {
-          console.log(`[AI] ${activeModel} halted (${info.errorCode}).`);
-          return { ok: false, ...lastFailure };
+        if (activeModel === MODEL_NAME && info.isDailyQuota) {
+          primaryDailyQuotaExhaustedUntil = Date.now() + 5 * 60 * 1000;
         }
-
-        console.log(`[AI] ${activeModel} attempt ${attempt}/${maxAttempts} failed (${info.errorCode}): ${err instanceof Error ? err.message : String(err)}`);
+        if (info.switchModel) break;
         if (info.retryable && attempt < maxAttempts) {
           await sleepMs(650 * attempt);
           continue;
         }
+        if (mIdx < modelsToTry.length - 1) break;
         return { ok: false, ...lastFailure };
       }
     }
@@ -216,6 +334,7 @@ async function startServer() {
       configured: Boolean(client),
       model: activeModel,
       fallbackModel: FALLBACK_MODEL_NAME,
+      operation: 'generateContent',
       mode: client ? 'server_proxy_ready' : 'unavailable_no_key',
       authConfigured: isServerSupabaseConfigured(),
     });
@@ -323,7 +442,8 @@ async function startServer() {
                 tableColumns: { type: Type.ARRAY, items: { type: Type.STRING } },
                 tableRows: {
                   type: Type.ARRAY,
-                  items: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  description: 'One string per row. Separate cell values with |.',
+                  items: { type: Type.STRING },
                 },
                 investigationSummaries: {
                   type: Type.ARRAY,
@@ -351,27 +471,21 @@ async function startServer() {
       );
 
       if (!result.ok) {
-        const errRes = result as { ok: false; status: number; errorCode: string; userMessage: string };
-        res.status(errRes.status).json({
-          ok: false,
-          errorCode: errRes.errorCode,
-          userMessage: errRes.userMessage,
-        });
+        res.status(result.status).json(aiErrorBody(result));
         return;
       }
 
       res.json({
         ok: true,
         modelName: result.modelName,
-        data: result.data,
+        data: {
+          ...result.data,
+          tableRows: tableRowsFromModel(result.data.tableRows),
+        },
       });
     } catch (err) {
       const info = classifyGeminiError(err);
-      res.status(info.status).json({
-        ok: false,
-        errorCode: info.errorCode,
-        userMessage: info.userMessage,
-      });
+      res.status(info.status).json(aiErrorBody(info));
     }
   });
 
@@ -446,12 +560,7 @@ async function startServer() {
       );
 
       if (!result.ok) {
-        const errRes = result as { ok: false; status: number; errorCode: string; userMessage: string };
-        res.status(errRes.status).json({
-          ok: false,
-          errorCode: errRes.errorCode,
-          userMessage: errRes.userMessage,
-        });
+        res.status(result.status).json(aiErrorBody(result));
         return;
       }
 
@@ -467,7 +576,7 @@ async function startServer() {
       });
     } catch (err) {
       const info = classifyGeminiError(err);
-      res.status(info.status).json({ ok: false, errorCode: info.errorCode, userMessage: info.userMessage });
+      res.status(info.status).json(aiErrorBody(info));
     }
   });
 
@@ -524,12 +633,7 @@ async function startServer() {
       );
 
       if (!result.ok) {
-        const errRes = result as { ok: false; status: number; errorCode: string; userMessage: string };
-        res.status(errRes.status).json({
-          ok: false,
-          errorCode: errRes.errorCode,
-          userMessage: errRes.userMessage,
-        });
+        res.status(result.status).json(aiErrorBody(result));
         return;
       }
 
@@ -545,7 +649,7 @@ async function startServer() {
       });
     } catch (err) {
       const info = classifyGeminiError(err);
-      res.status(info.status).json({ ok: false, errorCode: info.errorCode, userMessage: info.userMessage });
+      res.status(info.status).json(aiErrorBody(info));
     }
   });
 
@@ -616,12 +720,7 @@ async function startServer() {
       );
 
       if (!result.ok) {
-        const errRes = result as { ok: false; status: number; errorCode: string; userMessage: string };
-        res.status(errRes.status).json({
-          ok: false,
-          errorCode: errRes.errorCode,
-          userMessage: errRes.userMessage,
-        });
+        res.status(result.status).json(aiErrorBody(result));
         return;
       }
 
@@ -636,7 +735,7 @@ async function startServer() {
       });
     } catch (err) {
       const info = classifyGeminiError(err);
-      res.status(info.status).json({ ok: false, errorCode: info.errorCode, userMessage: info.userMessage });
+      res.status(info.status).json(aiErrorBody(info));
     }
   });
 
@@ -728,12 +827,7 @@ async function startServer() {
       );
 
       if (!result.ok) {
-        const errRes = result as { ok: false; status: number; errorCode: string; userMessage: string };
-        res.status(errRes.status).json({
-          ok: false,
-          errorCode: errRes.errorCode,
-          userMessage: errRes.userMessage,
-        });
+        res.status(result.status).json(aiErrorBody(result));
         return;
       }
 
@@ -750,7 +844,7 @@ async function startServer() {
       });
     } catch (err) {
       const info = classifyGeminiError(err);
-      res.status(info.status).json({ ok: false, errorCode: info.errorCode, userMessage: info.userMessage });
+      res.status(info.status).json(aiErrorBody(info));
     }
   });
 
@@ -818,12 +912,7 @@ async function startServer() {
       );
 
       if (!result.ok) {
-        const errRes = result as { ok: false; status: number; errorCode: string; userMessage: string };
-        res.status(errRes.status).json({
-          ok: false,
-          errorCode: errRes.errorCode,
-          userMessage: errRes.userMessage,
-        });
+        res.status(result.status).json(aiErrorBody(result));
         return;
       }
 
@@ -839,7 +928,7 @@ async function startServer() {
       });
     } catch (err) {
       const info = classifyGeminiError(err);
-      res.status(info.status).json({ ok: false, errorCode: info.errorCode, userMessage: info.userMessage });
+      res.status(info.status).json(aiErrorBody(info));
     }
   });
 
