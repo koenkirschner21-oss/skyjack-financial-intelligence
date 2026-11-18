@@ -154,10 +154,42 @@ export const RecordDetailDrawer: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="space-y-2.5">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-[#5F6368]">
-                    Five Ws and How (Appendix 2.3)
-                  </h3>
+                <dl className="grid grid-cols-1 gap-2 text-sm">
+                  <div>
+                    <dt className="text-[11px] font-medium text-[#5F6368]">What happened</dt>
+                    <dd className="text-[#231F20]">{cost.fiveWs.what}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[11px] font-medium text-[#5F6368]">Location and date</dt>
+                    <dd className="text-[#231F20]">{cost.fiveWs.where}. {cost.fiveWs.when}.</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[11px] font-medium text-[#5F6368]">Financial exposure</dt>
+                    <dd className="font-mono tabular-nums text-[#231F20]">{formatMoney(cost.amountCad)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[11px] font-medium text-[#5F6368]">Investigation status</dt>
+                    <dd className="text-[#231F20]">
+                      {investigation ? formatInvestigationStatus(investigation.status) : 'No investigation record'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[11px] font-medium text-[#5F6368]">Why flagged</dt>
+                    <dd className="text-[#231F20]">{relatedFlags[0]?.summary ?? cost.approvalNote}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[11px] font-medium text-[#5F6368]">Next action</dt>
+                    <dd className="text-[#231F20]">
+                      {canEditThisInv
+                        ? 'Update the investigation state or request a correction review below.'
+                        : 'Review the record. Status changes are read-only for this role.'}
+                    </dd>
+                  </div>
+                </dl>
+
+                <details className="border border-[#E2E5E8] rounded">
+                  <summary className="px-3 py-2 text-xs font-medium text-[#231F20] cursor-pointer">Source events and five Ws</summary>
+                  <div className="px-3 pb-3 space-y-2.5">
                   <dl className="divide-y divide-[#E2E5E8] border border-[#E2E5E8] rounded bg-white">
                     {([
                       ['Who', cost.fiveWs.who],
@@ -173,12 +205,12 @@ export const RecordDetailDrawer: React.FC = () => {
                       </div>
                     ))}
                   </dl>
-                </div>
+                  </div>
+                </details>
 
-                <div className="space-y-2.5">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-[#5F6368]">
-                    Individual Rule Evaluations ({relatedFlags.length})
-                  </h3>
+                <details className="border border-[#E2E5E8] rounded">
+                  <summary className="px-3 py-2 text-xs font-medium text-[#231F20] cursor-pointer">Financial statement context and rule flags</summary>
+                  <div className="px-3 pb-3 space-y-2.5">
                   <div className="p-3.5 border border-[#E2E5E8] rounded bg-white space-y-1.5">
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-medium text-[#231F20]">Approval Reference Status</span>
@@ -204,7 +236,8 @@ export const RecordDetailDrawer: React.FC = () => {
                       <p className="text-[#5F6368]">{flag.nonFraudDisclaimer}</p>
                     </div>
                   ))}
-                </div>
+                  </div>
+                </details>
 
                 {investigation && (
                   <div className="space-y-2 pt-2 border-t border-[#E2E5E8]">
@@ -241,10 +274,9 @@ export const RecordDetailDrawer: React.FC = () => {
                   </div>
                 )}
 
-                <div className="space-y-3 pt-2 border-t border-[#E2E5E8]">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-[#5F6368]">
-                    Evidence & Governance Notes ({evidenceList.length})
-                  </h3>
+                <details className="border border-[#E2E5E8] rounded">
+                  <summary className="px-3 py-2 text-xs font-medium text-[#231F20] cursor-pointer">Supporting evidence ({evidenceList.length})</summary>
+                  <div className="px-3 pb-3 space-y-2">
                   {evidenceList.length > 0 ? (
                     <div className="space-y-2">
                       {evidenceList.map((ev) => (
@@ -263,6 +295,8 @@ export const RecordDetailDrawer: React.FC = () => {
                   ) : (
                     <p className="text-xs text-[#5F6368]">No additional demonstration evidence attached yet.</p>
                   )}
+                  </div>
+                </details>
 
                   {canSubmitCorrection && (
                     <div className="space-y-3 pt-2">
@@ -363,10 +397,10 @@ export const RecordDetailDrawer: React.FC = () => {
                       )}
                     </div>
                   )}
-                </div>
 
-                {/* Connected Financial Digital Thread */}
-                <div className="space-y-2.5 pt-2 border-t border-[#E2E5E8]">
+                <details className="border border-[#E2E5E8] rounded">
+                  <summary className="px-3 py-2 text-xs font-medium text-[#231F20] cursor-pointer">Investigation history and financial thread</summary>
+                  <div className="px-3 pb-3 space-y-2.5">
                   <div className="flex items-center justify-between">
                     <h3 className="text-xs font-semibold uppercase tracking-wider text-[#5F6368] flex items-center gap-1.5">
                       <GitBranch className="w-3.5 h-3.5 text-[#E53C2E]" />
@@ -389,7 +423,8 @@ export const RecordDetailDrawer: React.FC = () => {
                     compact
                     onNavigateAway={closeDrawer}
                   />
-                </div>
+                  </div>
+                </details>
               </>
             );
           })()}
@@ -513,8 +548,9 @@ export const RecordDetailDrawer: React.FC = () => {
                   </div>
                 )}
 
-                {/* Connected Financial Digital Thread */}
-                <div className="space-y-2.5 pt-2 border-t border-[#E2E5E8]">
+                <details className="border border-[#E2E5E8] rounded">
+                  <summary className="px-3 py-2 text-xs font-medium text-[#231F20] cursor-pointer">Supporting evidence and financial thread</summary>
+                  <div className="px-3 pb-3 space-y-2.5">
                   <div className="flex items-center justify-between">
                     <h3 className="text-xs font-semibold uppercase tracking-wider text-[#5F6368] flex items-center gap-1.5">
                       <GitBranch className="w-3.5 h-3.5 text-[#E53C2E]" />
@@ -537,7 +573,8 @@ export const RecordDetailDrawer: React.FC = () => {
                     compact
                     onNavigateAway={closeDrawer}
                   />
-                </div>
+                  </div>
+                </details>
 
                 <div className="pt-2 border-t border-[#E2E5E8] flex flex-wrap justify-between items-center gap-2">
                   {canSimulate && (
@@ -720,17 +757,16 @@ export const RecordDetailDrawer: React.FC = () => {
                     ))}
                   </div>
                 )}
-                <div className="pt-2 border-t border-[#E2E5E8] space-y-2">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-[#5F6368] flex items-center gap-1.5">
-                    <GitBranch className="w-3.5 h-3.5 text-[#E53C2E]" />
-                    <span>Upload Batch Digital Thread</span>
-                  </div>
+                <details className="border border-[#E2E5E8] rounded">
+                  <summary className="px-3 py-2 text-xs font-medium text-[#231F20] cursor-pointer">Source events and financial thread</summary>
+                  <div className="px-3 pb-3 space-y-2">
                   <FinancialDigitalThreadView
                     recordId={tx.transactionId}
                     compact
                     onNavigateAway={closeDrawer}
                   />
-                </div>
+                  </div>
+                </details>
               </div>
             );
           })()}
@@ -776,17 +812,16 @@ export const RecordDetailDrawer: React.FC = () => {
                     </div>
                   ))}
                 </dl>
-                <div className="pt-2 border-t border-[#E2E5E8] space-y-2">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-[#5F6368] flex items-center gap-1.5">
-                    <GitBranch className="w-3.5 h-3.5 text-[#E53C2E]" />
-                    <span>Upload Batch Digital Thread</span>
-                  </div>
+                <details className="border border-[#E2E5E8] rounded">
+                  <summary className="px-3 py-2 text-xs font-medium text-[#231F20] cursor-pointer">Source events and financial thread</summary>
+                  <div className="px-3 pb-3 space-y-2">
                   <FinancialDigitalThreadView
                     recordId={rec.entryId}
                     compact
                     onNavigateAway={closeDrawer}
                   />
-                </div>
+                  </div>
+                </details>
               </div>
             );
           })()}

@@ -5,6 +5,7 @@ import {
   HistoricalTradeCost,
   IncomeStatement,
   QuarterId,
+  RegionId,
   RegionalSale,
 } from '../../types/domain';
 
@@ -26,11 +27,11 @@ export const EightQuarterPerformanceChart: React.FC<EightQuarterChartProps> = ({
   const currencyPrefix = CURRENCY_METADATA[state.currency].compactPrefix;
 
   const width = 680;
-  const height = 240;
-  const padLeft = 58;
-  const padRight = 20;
-  const padTop = 22;
-  const padBottom = 34;
+  const height = 210;
+  const padLeft = 52;
+  const padRight = 16;
+  const padTop = 12;
+  const padBottom = 28;
   const innerW = width - padLeft - padRight;
   const innerH = height - padTop - padBottom;
 
@@ -194,15 +195,7 @@ export const EightQuarterPerformanceChart: React.FC<EightQuarterChartProps> = ({
                 />
                 <text
                   x={x + barW / 2}
-                  y={y - 6}
-                  textAnchor="middle"
-                  className="fill-[#231F20] text-[9.5px] font-mono"
-                >
-                  {currencyPrefix}{(convertAmount(val) / 1_000_000).toFixed(1)}M
-                </text>
-                <text
-                  x={x + barW / 2}
-                  y={height - 10}
+                  y={height - 12}
                   textAnchor="middle"
                   className={`text-[10px] font-mono ${
                     isSelected ? 'fill-[#E53C2E] font-semibold' : 'fill-[#5F6368]'
@@ -216,23 +209,14 @@ export const EightQuarterPerformanceChart: React.FC<EightQuarterChartProps> = ({
         )}
       </svg>
 
-      {/* Interactive Tooltip / Active Quarter Readout */}
-      {(() => {
-        const displayStmt = hovered ?? statements.find((s) => s.quarterId === selectedQuarterId) ?? statements[statements.length - 1];
-        if (!displayStmt) return null;
-        return (
-          <div className="mt-2 px-3 py-2 bg-[#F5F6F7] border border-[#E2E5E8] rounded flex flex-wrap items-center justify-between gap-2 text-xs">
-            <span className="font-medium text-[#231F20]">
-              {hovered ? `${displayStmt.quarterId} · Hover` : `${displayStmt.quarterId} · Selected`}
-            </span>
-            <div className="flex flex-wrap items-center gap-4 font-mono tabular-nums text-[#231F20]">
-              <span>Sales: {formatMoney(displayStmt.salesCad)}</span>
-              <span>OE: {formatMoney(displayStmt.operatingEarningsCad)}</span>
-              <span>Margin: {displayStmt.oeShareOfSalesPct.toFixed(1)}%</span>
-            </div>
-          </div>
-        );
-      })()}
+      {hovered && (
+        <div className="pointer-events-none absolute left-3 top-2 rounded-md border border-[#E2E5E8] bg-white/95 px-2.5 py-1.5 text-[11px] shadow-sm">
+          <span className="font-medium text-[#231F20]">{hovered.quarterId}</span>
+          <span className="ml-2 font-mono tabular-nums text-[#5F6368]">
+            Sales {formatMoney(hovered.salesCad)} · OE {formatMoney(hovered.operatingEarningsCad)} · {hovered.oeShareOfSalesPct.toFixed(1)}%
+          </span>
+        </div>
+      )}
     </div>
   );
 };
@@ -418,6 +402,125 @@ export const RegionalComparisonChart: React.FC<RegionalComparisonChartProps> = (
           </button>
         );
       })}
+    </div>
+  );
+};
+
+const DONUT_COLORS = ['#231F20', '#4B4F54', '#7E8082', '#A8AAAD', '#C8CACC'];
+
+export const RegionalSalesDonut: React.FC<{
+  slices: Array<{ regionId: Exclude<RegionId, 'all'>; regionName: string; salesCad: number }>;
+  selectedRegionId: RegionId;
+  totalCad: number;
+  onSelectRegion: (regionId: Exclude<RegionId, 'all'>) => void;
+}> = ({ slices, selectedRegionId, totalCad, onSelectRegion }) => {
+  const { formatMoney, formatCompactMoney } = useApp();
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const radius = 58;
+  const circumference = 2 * Math.PI * radius;
+  let offset = 0;
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-[148px_minmax(0,1fr)] gap-4 items-center">
+      <div className="relative mx-auto h-[148px] w-[148px]">
+        <svg viewBox="0 0 148 148" className="h-full w-full -rotate-90" role="img" aria-label="Sales by region">
+          {slices.map((slice, index) => {
+            const fraction = totalCad > 0 ? slice.salesCad / totalCad : 0;
+            const length = fraction * circumference;
+            const dash = `${length} ${circumference - length}`;
+            const selected = slice.regionId === selectedRegionId;
+            const segmentOffset = offset;
+            offset += length;
+            return (
+              <circle
+                key={slice.regionId}
+                cx="74"
+                cy="74"
+                r={radius}
+                fill="none"
+                stroke={selected ? '#E53C2E' : DONUT_COLORS[index % DONUT_COLORS.length]}
+                strokeWidth={selected || hoveredId === slice.regionId ? 18 : 14}
+                strokeDasharray={dash}
+                strokeDashoffset={-segmentOffset}
+                className="cursor-pointer"
+                onMouseEnter={() => setHoveredId(slice.regionId)}
+                onMouseLeave={() => setHoveredId(null)}
+                onClick={() => onSelectRegion(slice.regionId)}
+              >
+                <title>{`${slice.regionName}: ${formatMoney(slice.salesCad)}`}</title>
+              </circle>
+            );
+          })}
+        </svg>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+          <span className="text-[10px] text-[#5F6368]">Total</span>
+          <span className="text-sm font-semibold tabular-nums text-[#231F20]">{formatCompactMoney(totalCad)}</span>
+        </div>
+      </div>
+      <ul className="space-y-1">
+        {slices.map((slice, index) => {
+          const pct = totalCad > 0 ? (slice.salesCad / totalCad) * 100 : 0;
+          const selected = slice.regionId === selectedRegionId;
+          return (
+            <li key={slice.regionId}>
+              <button
+                type="button"
+                onClick={() => onSelectRegion(slice.regionId)}
+                className={`w-full flex items-center justify-between gap-2 rounded px-2 py-1 text-left text-xs cursor-pointer ${
+                  selected ? 'bg-[#F5F6F7]' : 'hover:bg-[#F8F9FA]'
+                }`}
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="h-2.5 w-2.5 rounded-sm shrink-0"
+                    style={{ backgroundColor: selected ? '#E53C2E' : DONUT_COLORS[index % DONUT_COLORS.length] }}
+                  />
+                  <span className="truncate text-[#231F20]">{slice.regionName}</span>
+                </span>
+                <span className="font-mono tabular-nums text-[#231F20] shrink-0 whitespace-nowrap">
+                  {formatCompactMoney(slice.salesCad)}
+                  <span className="text-[#5F6368] ml-1.5">{pct.toFixed(1)}%</span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+};
+
+export const ChinaTariffScenarioChart: React.FC = () => {
+  const { formatMoney, formatCompactMoney } = useApp();
+  const scenarios = [
+    { rate: '0%', amountCad: 0, baseline: false },
+    { rate: '15%', amountCad: 315_000, baseline: false },
+    { rate: '25%', amountCad: 525_000, baseline: true },
+    { rate: '35%', amountCad: 735_000, baseline: false },
+  ];
+  const max = 735_000;
+  return (
+    <div className="space-y-2">
+      {scenarios.map((scenario) => (
+        <div key={scenario.rate} className="grid grid-cols-[42px_minmax(0,1fr)_88px] items-center gap-2 text-xs">
+          <span className={`font-mono ${scenario.baseline ? 'font-semibold text-[#E53C2E]' : 'text-[#5F6368]'}`}>
+            {scenario.rate}
+          </span>
+          <div className="h-3 rounded bg-[#F0F1F3] overflow-hidden" title={`${scenario.rate} additional China tariff ${formatMoney(scenario.amountCad)}`}>
+            <div
+              className="h-full rounded"
+              style={{
+                width: `${Math.max(scenario.amountCad === 0 ? 1.5 : 0, (scenario.amountCad / max) * 100)}%`,
+                backgroundColor: scenario.baseline ? '#E53C2E' : '#231F20',
+              }}
+            />
+          </div>
+          <span className="text-right font-mono tabular-nums text-[#231F20]">{formatCompactMoney(scenario.amountCad)}</span>
+        </div>
+      ))}
+      <p className="text-[11px] text-[#5F6368] leading-relaxed">
+        Baseline 25% is {formatMoney(525_000)}. A 15% rate would lower additional China tariffs by {formatMoney(210_000)} on the CAD 2,100,000 China goods base. These bars are scenarios, not total trade cost or realized profit.
+      </p>
     </div>
   );
 };

@@ -8,7 +8,6 @@ import {
   FileSpreadsheet,
   Globe2,
   History,
-  Info,
   LayoutDashboard,
   Lock,
   LogOut,
@@ -28,7 +27,7 @@ import {
   REPORTING_PERIODS,
 } from '../../data/caseSeed';
 import { useAuth } from '../../context/AuthContext';
-import { CURRENCY_METADATA, DEMO_CAD_TO_USD_RATE } from '../../domain/currencyService';
+import { DEMO_CAD_TO_USD_RATE } from '../../domain/currencyService';
 import { useApp } from '../../context/AppContext';
 import { AppNotification, CurrencyCode, QuarterId, RegionId, RoutePath } from '../../types/domain';
 import { SkyjackLogo } from '../brand/SkyjackLogo';
@@ -120,12 +119,10 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [currencyNoticeOpen, setCurrencyNoticeOpen] = useState(false);
-  const [caseInfoOpen, setCaseInfoOpen] = useState(false);
   const [layer2HeaderNode, setLayer2HeaderNode] = useState<HTMLDivElement | null>(null);
 
   const notificationsRef = useRef<HTMLDivElement>(null);
   const currencyRef = useRef<HTMLDivElement>(null);
-  const caseInfoRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
 
   const activeTitle = ROUTE_TITLES[currentRoute] ?? 'Overview';
@@ -140,9 +137,6 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
       if (currencyNoticeOpen && currencyRef.current && !currencyRef.current.contains(target)) {
         setCurrencyNoticeOpen(false);
       }
-      if (caseInfoOpen && caseInfoRef.current && !caseInfoRef.current.contains(target)) {
-        setCaseInfoOpen(false);
-      }
       if (profileMenuOpen && profileRef.current && !profileRef.current.contains(target)) {
         setProfileMenuOpen(false);
       }
@@ -152,7 +146,6 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
       if (event.key === 'Escape') {
         setNotificationsOpen(false);
         setCurrencyNoticeOpen(false);
-        setCaseInfoOpen(false);
         setProfileMenuOpen(false);
         setMobileNavOpen(false);
       }
@@ -164,7 +157,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
       document.removeEventListener('mousedown', handleMouseDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [notificationsOpen, currencyNoticeOpen, caseInfoOpen, profileMenuOpen]);
+  }, [notificationsOpen, currencyNoticeOpen, profileMenuOpen]);
 
   const handleNotificationClick = (notif: AppNotification) => {
     markNotificationRead(notif.id);
@@ -178,6 +171,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
   };
 
   const showLayer2Filters =
+    currentRoute !== '/overview' &&
     currentRoute !== '/reports' &&
     currentRoute !== '/data-gateway' &&
     currentRoute !== '/approvals' &&
@@ -318,7 +312,6 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                   setProfileMenuOpen((v) => !v);
                   setNotificationsOpen(false);
                   setCurrencyNoticeOpen(false);
-                  setCaseInfoOpen(false);
                 }}
                 aria-expanded={profileMenuOpen}
                 aria-label={`Account menu for ${activeUser.name}`}
@@ -448,13 +441,15 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                 <span>Ask SKYJACK</span>
               </button>
 
+              <span className="hidden sm:inline text-[11px] text-[#5F6368] tabular-nums" title="Fixed reference assumption, not a live FX rate">
+                Reference FX: 1 CAD = {DEMO_CAD_TO_USD_RATE.toFixed(2)} USD
+              </span>
               <div ref={currencyRef} className="relative">
                 <button
                   type="button"
                   onClick={() => {
                     setCurrencyNoticeOpen((v) => !v);
                     setNotificationsOpen(false);
-                    setCaseInfoOpen(false);
                     setProfileMenuOpen(false);
                   }}
                   className="px-2.5 py-1.5 text-xs font-mono font-medium tabular-nums text-[#231F20] bg-[#F5F6F7] hover:bg-[#ECEEF0] border border-[#E2E5E8] rounded-md transition-colors whitespace-nowrap cursor-pointer"
@@ -493,78 +488,11 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                       ))}
                     </div>
                     <p className="text-[11px] text-[#5F6368] leading-relaxed">
-                      {CURRENCY_METADATA[state.currency].rateDescription}
+                      Fixed reference assumption, not a live FX rate.
                     </p>
                     <div className="pt-1.5 border-t border-[#E2E5E8] flex items-center justify-between text-[11px] text-[#5F6368] tabular-nums">
                       <span>Reference FX rate</span>
                       <span className="font-mono text-[#231F20]">1 CAD = {DEMO_CAD_TO_USD_RATE.toFixed(2)} USD</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Discreet About / Data Sources Info */}
-              <div ref={caseInfoRef} className="relative">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCaseInfoOpen((v) => !v);
-                    setCurrencyNoticeOpen(false);
-                    setNotificationsOpen(false);
-                    setProfileMenuOpen(false);
-                  }}
-                  className="p-1.5 text-[#5F6368] hover:text-[#231F20] bg-[#F5F6F7] hover:bg-[#ECEEF0] border border-[#E2E5E8] rounded-md transition-colors cursor-pointer"
-                  aria-label="About SKYJACK Financial Intelligence data sources"
-                  title="About data sources"
-                  aria-expanded={caseInfoOpen}
-                >
-                  <Info className="w-4 h-4" />
-                </button>
-
-                {caseInfoOpen && (
-                  <div className="absolute right-0 mt-1.5 w-80 bg-white border border-[#E2E5E8] rounded-lg shadow-lg p-3.5 z-50 text-xs space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-[#231F20]">About Data Sources</span>
-                      <button
-                        type="button"
-                        onClick={() => setCaseInfoOpen(false)}
-                        className="text-[#5F6368] hover:text-[#231F20] cursor-pointer"
-                        aria-label="Close data sources information"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                    <p className="text-[11px] text-[#5F6368] leading-relaxed">
-                      Official figures come from the SKYJACK competition dataset (Q4 2024–Q3 2026) and are not connected to live corporate ERP systems.
-                    </p>
-                    <p className="text-[11px] text-[#5F6368] leading-relaxed">
-                      Authorized imports, quarantined items, and hypothetical tariff scenarios are tracked separately so core baselines remain verifiable.
-                    </p>
-                    <div className="pt-2 border-t border-[#E2E5E8] flex items-center justify-between text-[11px]">
-                      {canViewRoute('/audit') ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCaseInfoOpen(false);
-                            navigate('/audit');
-                          }}
-                          className="text-[#E53C2E] font-medium hover:underline cursor-pointer"
-                        >
-                          Audit History
-                        </button>
-                      ) : (
-                        <span className="text-[#7E8082]">{activeTitleSub}</span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCaseInfoOpen(false);
-                          navigate('/settings');
-                        }}
-                        className="text-[#231F20] font-medium hover:underline cursor-pointer"
-                      >
-                        Settings &amp; Sources
-                      </button>
                     </div>
                   </div>
                 )}
@@ -577,7 +505,6 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                   onClick={() => {
                     setNotificationsOpen((v) => !v);
                     setCurrencyNoticeOpen(false);
-                    setCaseInfoOpen(false);
                     setProfileMenuOpen(false);
                   }}
                   className="relative p-1.5 text-[#5F6368] hover:text-[#231F20] bg-[#F5F6F7] hover:bg-[#ECEEF0] border border-[#E2E5E8] rounded-md transition-colors cursor-pointer"
@@ -736,8 +663,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                     </label>
                   )}
 
-                  {currentRoute !== '/overview' &&
-                    currentRoute !== '/financials' &&
+                  {currentRoute !== '/financials' &&
                     currentRoute !== '/trade' &&
                     currentRoute !== '/simulator' &&
                     currentRoute !== '/investigations' && (
