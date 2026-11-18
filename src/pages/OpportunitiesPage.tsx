@@ -2,13 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowUpRight,
-  CheckCircle2,
   Compass,
   FileSpreadsheet,
   Info,
   Lock,
   Search,
-  ShieldCheck,
   X,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
@@ -26,51 +24,6 @@ import {
 } from '../types/domain';
 import { PageHeader, ProvenanceText, UnavailableDataState } from '../components/common/StateViews';
 
-const CATEGORY_VISUAL_SYSTEM: Record<
-  OpportunityCategory,
-  { badgeCls: string; barColor: string; accentText: string }
-> = {
-  potential_cash_recovery: {
-    badgeCls: 'text-[#15803D] bg-emerald-50 border-emerald-200',
-    barColor: '#16A34A',
-    accentText: 'text-[#15803D]',
-  },
-  accounting_correction: {
-    badgeCls: 'text-[#1D4ED8] bg-blue-50 border-blue-200',
-    barColor: '#2563EB',
-    accentText: 'text-[#1D4ED8]',
-  },
-  avoidable_operating_cost: {
-    badgeCls: 'text-[#C2410C] bg-orange-50 border-orange-200',
-    barColor: '#EA580C',
-    accentText: 'text-[#C2410C]',
-  },
-  broker_discrepancy: {
-    badgeCls: 'text-[#B45309] bg-amber-50 border-amber-200',
-    barColor: '#D97706',
-    accentText: 'text-[#B45309]',
-  },
-  trade_agreement_savings: {
-    badgeCls: 'text-[#0F766E] bg-teal-50 border-teal-200',
-    barColor: '#0D9488',
-    accentText: 'text-[#0F766E]',
-  },
-  hypothetical_tariff_scenario: {
-    badgeCls: 'text-[#5B21B6] bg-violet-50 border-violet-200',
-    barColor: '#7C3AED',
-    accentText: 'text-[#5B21B6]',
-  },
-};
-
-const STATUS_BADGE_STYLES: Record<OpportunityWorkflowStatus, string> = {
-  Identified: 'text-[#4B5563] bg-[#F5F6F7] border-[#E2E5E8]',
-  'Under Review': 'text-[#B45309] bg-amber-50 border-amber-200',
-  'Validated Opportunity': 'text-[#1D4ED8] bg-blue-50 border-blue-200',
-  'Approved Action': 'text-[#1D4ED8] bg-blue-50 border-blue-200',
-  'In Progress': 'text-[#C2410C] bg-orange-50 border-orange-200',
-  Realized: 'text-[#15803D] bg-emerald-50 border-emerald-200',
-  Rejected: 'text-[#5F6368] bg-[#F8F9FA] border-[#E2E5E8]',
-};
 
 export const OpportunitiesPage: React.FC = () => {
   const {
@@ -207,6 +160,13 @@ export const OpportunitiesPage: React.FC = () => {
         title="Cost Opportunity Centre"
         actions={
           <div className="flex flex-wrap items-center gap-2 relative" ref={infoPopoverRef}>
+            <div
+              className="inline-flex items-center gap-2 bg-white border border-[#E2E5E8] rounded-md px-2.5 py-1.5 text-[#5F6368]"
+              aria-label="Reporting period Q3 2026"
+            >
+              <span className="text-[11px] font-medium">Period</span>
+              <span className="text-xs font-semibold text-[#231F20]">Q3 2026</span>
+            </div>
             <button
               type="button"
               onClick={() => setShowInfoPopover((prev) => !prev)}
@@ -223,7 +183,7 @@ export const OpportunitiesPage: React.FC = () => {
                 onClick={() =>
                   openReportStudioWithPreset({
                     templateId: 'cost_optimization_report',
-                    reportingPeriod: state.selectedQuarterId,
+                    reportingPeriod: 'Q3 2026',
                     datasetScope: 'combined_with_hypothetical',
                     includedSections: [
                       'str_opportunity_pipeline',
@@ -259,8 +219,9 @@ export const OpportunitiesPage: React.FC = () => {
                 <p className="text-[11px] text-[#5F6368] leading-relaxed">
                   Cash recoveries, non-cash accounting adjustments, avoidable operating costs, trade
                   agreement candidates, broker variances, and hypothetical tariff scenarios are tracked
-                  strictly without cross-category summing. Only Group Controller sign-off confirms
-                  Realized savings.
+                  strictly without cross-category summing. Saved tariff scenarios (
+                  {formatMoney(analytics.hypotheticalScenarioAnnualCad)}) stay outside cash, accounting,
+                  and realized totals. Only Group Controller sign-off confirms Realized savings.
                 </p>
                 <div className="text-[11px] text-[#5F6368] pt-1 border-t border-[#F0F1F3]">
                   Tracked Candidates: <strong className="text-[#231F20]">{opportunities.length}</strong> ·{' '}
@@ -272,108 +233,59 @@ export const OpportunitiesPage: React.FC = () => {
         }
       />
 
-      {/* 1. CLEANER & CONSISTENT KPI SUMMARY CARDS */}
-      <section aria-label="Opportunity KPIs" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
-        <div className="bg-white border border-[#E2E5E8] rounded-md p-3.5 flex flex-col justify-between">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-[#5F6368]">Potential Cash Recoveries</span>
-            <span className="w-2 h-2 rounded-full bg-[#16A34A] shrink-0" aria-hidden="true" />
+      <section aria-label="Opportunity KPIs" className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        {[
+          {
+            label: 'Potential Cash Recoveries',
+            amount: analytics.potentialCashRecoveryCad,
+            note: 'Unverified. Not realized cash.',
+            tone: 'neutral' as const,
+          },
+          {
+            label: 'Accounting Corrections',
+            amount: analytics.accountingAdjustmentExposureCad,
+            note: 'Not recoverable cash.',
+            tone: 'neutral' as const,
+          },
+          {
+            label: 'Future Avoidable Costs',
+            amount: analytics.avoidableOperatingCostCad,
+            note: 'Not recovered cash.',
+            tone: 'neutral' as const,
+          },
+          {
+            label: 'Trade Agreement Review',
+            amount: analytics.tradeAgreementPotentialCad,
+            note: 'Unconfirmed. Not recovered cash.',
+            tone: 'neutral' as const,
+          },
+          {
+            label: 'Verified / Realized',
+            amount: analytics.totalRealizedCad,
+            note: analytics.totalVerifiedCad > 0
+              ? `Verified ${formatMoney(analytics.totalVerifiedCad)}`
+              : 'None verified or realized.',
+            tone: analytics.totalRealizedCad > 0 ? 'favourable' as const : 'neutral' as const,
+          },
+        ].map((card) => (
+          <div key={card.label} className="bg-white border border-[#E2E5E8] rounded-md p-3">
+            <div className="text-[11px] font-medium text-[#5F6368] leading-snug">{card.label}</div>
+            <div
+              className={`text-xl font-semibold tabular-nums mt-1 ${
+                card.tone === 'favourable' ? 'text-[#15803D]' : 'text-[#231F20]'
+              }`}
+            >
+              {formatCompactMoney(card.amount)}
+            </div>
+            <div className="text-[11px] text-[#5F6368] mt-1">{card.note}</div>
           </div>
-          <div className="text-xl font-semibold text-[#15803D] font-mono tabular-nums mt-1.5">
-            {formatCompactMoney(analytics.potentialCashRecoveryCad + analytics.brokerDiscrepancyGrossCad)}
-          </div>
-          <div className="text-[11px] text-[#5F6368] font-mono tabular-nums mt-1">
-            AP ({formatCompactMoney(analytics.potentialCashRecoveryCad)}) · Broker ({formatCompactMoney(analytics.brokerDiscrepancyGrossCad)})
-          </div>
-        </div>
-
-        <div className="bg-white border border-[#E2E5E8] rounded-md p-3.5 flex flex-col justify-between">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-[#5F6368]">Accounting Adj. (Non-Cash)</span>
-            <span className="w-2 h-2 rounded-full bg-[#2563EB] shrink-0" aria-hidden="true" />
-          </div>
-          <div className="text-xl font-semibold text-[#1D4ED8] font-mono tabular-nums mt-1.5">
-            {formatCompactMoney(analytics.accountingAdjustmentExposureCad)}
-          </div>
-          <div className="text-[11px] text-[#5F6368] mt-1">
-            Reclassifications &amp; accrual reversals
-          </div>
-        </div>
-
-        <div className="bg-white border border-[#E2E5E8] rounded-md p-3.5 flex flex-col justify-between">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-[#5F6368]">Avoidable Operating Costs</span>
-            <span className="w-2 h-2 rounded-full bg-[#EA580C] shrink-0" aria-hidden="true" />
-          </div>
-          <div className="text-xl font-semibold text-[#C2410C] font-mono tabular-nums mt-1.5">
-            {formatCompactMoney(analytics.avoidableOperatingCostCad)}
-          </div>
-          <div className="text-[11px] text-[#5F6368] mt-1">
-            Future process &amp; quality control target
-          </div>
-        </div>
-
-        <div className="bg-white border border-[#E2E5E8] rounded-md p-3.5 flex flex-col justify-between">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-[#5F6368]">Trade Agreement Potential</span>
-            <span className="w-2 h-2 rounded-xs bg-[#0D9488] shrink-0" aria-hidden="true" />
-          </div>
-          <div className="text-xl font-semibold text-[#0F766E] font-mono tabular-nums mt-1.5">
-            {formatCompactMoney(analytics.tradeAgreementPotentialCad)}
-          </div>
-          <div className="text-[11px] text-[#5F6368] mt-1">
-            Unconfirmed · Certificate of Origin req.
-          </div>
-        </div>
-
-        <div className="bg-white border border-[#E2E5E8] rounded-md p-3.5 flex flex-col justify-between">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-[#5F6368]">Realized Savings (Confirmed)</span>
-            <ShieldCheck className="w-3.5 h-3.5 text-[#15803D] shrink-0" aria-hidden="true" />
-          </div>
-          <div
-            className={`text-xl font-semibold font-mono tabular-nums mt-1.5 ${
-              analytics.totalRealizedCad > 0 ? 'text-[#15803D]' : 'text-[#231F20]'
-            }`}
-          >
-            {formatCompactMoney(analytics.totalRealizedCad)}
-          </div>
-          <div className="text-[11px] text-[#5F6368] font-mono tabular-nums mt-1">
-            Verified: {formatMoney(analytics.totalVerifiedCad)} · {analytics.outstandingVerificationsCount} pending
-          </div>
-        </div>
+        ))}
       </section>
-
-      {/* 2. RESTRAINED GUARDRAIL & ANTI-DOUBLE-COUNTING GOVERNANCE BANNER */}
-      {analytics.overlapNotes.length > 0 && (
-        <section
-          aria-label="Double-Counting Guardrails"
-          className="bg-white border border-amber-300 rounded-md px-4 py-3 text-xs flex items-start gap-3"
-        >
-          <AlertTriangle className="w-4 h-4 text-[#B45309] shrink-0 mt-0.5" />
-          <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-1">
-            <div>
-              <span className="font-semibold text-[#231F20]">Domain Overlap Prevention: </span>
-              <span className="text-[#5F6368]">{analytics.overlapNotes.join(' · ')}</span>
-            </div>
-            <div>
-              <span className="font-semibold text-[#231F20]">Scenario Exclusion: </span>
-              <span className="text-[#5F6368]">
-                Hypothetical tariff scenarios (
-                <span className="font-mono text-[#231F20]">
-                  {formatMoney(analytics.hypotheticalScenarioAnnualCad)}/yr
-                </span>
-                ) remain isolated from historical cash recovery totals.
-              </span>
-            </div>
-          </div>
-        </section>
-      )}
 
       {/* 3. VISUAL OVERVIEW: CATEGORY BREAKDOWN (NON-SUMMED) + PIPELINE BY STATUS & DEPARTMENT */}
       <section aria-label="Opportunity Overview Breakdown" className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* A. Opportunity Category Breakdown (Explicitly Non-Summed) */}
-        <div className="bg-white border border-[#E2E5E8] rounded-md p-4 space-y-3">
+        <div className="bg-white border border-[#E2E5E8] rounded-md p-3 space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-[#231F20]">
               Breakdown by Opportunity Category
@@ -385,7 +297,6 @@ export const OpportunitiesPage: React.FC = () => {
 
           <div className="space-y-2.5">
             {analytics.byCategory.map((c) => {
-              const vis = CATEGORY_VISUAL_SYSTEM[c.category];
               const widthPct = c.estimatedCad > 0 ? Math.max(3, (c.estimatedCad / maxCategoryEstCad) * 100) : 0;
               const isSelectedCat = categoryFilter === c.category;
 
@@ -393,39 +304,33 @@ export const OpportunitiesPage: React.FC = () => {
                 <button
                   key={c.category}
                   type="button"
+                  aria-pressed={isSelectedCat}
                   onClick={() =>
                     setCategoryFilter((prev) => (prev === c.category ? 'all' : c.category))
                   }
-                  className={`w-full text-left p-2 rounded border transition-colors cursor-pointer ${
+                  className={`w-full text-left px-2 py-1.5 rounded border transition-colors cursor-pointer ${
                     isSelectedCat
-                      ? 'bg-[#FDF2F1] border-[#E53C2E]/40'
+                      ? 'bg-[#F8F9FA] border-[#231F20]'
                       : 'border-transparent hover:bg-[#F8F9FA]'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2 text-xs">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span
-                        className="w-2 h-2 rounded-xs shrink-0"
-                        style={{ backgroundColor: vis.barColor }}
-                      />
-                      <span className="font-medium text-[#231F20] truncate">{c.label}</span>
-                      <span className="text-[11px] font-mono text-[#5F6368] shrink-0">
-                        ({c.count})
-                      </span>
-                    </div>
+                    <span className="font-medium text-[#231F20] truncate">
+                      {c.label}{' '}
+                      <span className="text-[11px] font-normal text-[#5F6368]">({c.count})</span>
+                    </span>
                     <span className="font-mono tabular-nums font-semibold text-[#231F20] shrink-0">
-                      {formatMoney(c.estimatedCad)}
+                      {c.count === 0 ? 'No records' : formatMoney(c.estimatedCad)}
                     </span>
                   </div>
-                  <div className="mt-1.5 h-1.5 bg-[#ECEEF0] rounded overflow-hidden">
-                    <div
-                      className="h-full rounded transition-all duration-200"
-                      style={{
-                        width: `${widthPct}%`,
-                        backgroundColor: vis.barColor,
-                      }}
-                    />
-                  </div>
+                  {c.count > 0 && (
+                    <div className="mt-1 h-1.5 bg-[#ECEEF0] rounded overflow-hidden">
+                      <div
+                        className="h-full rounded bg-[#231F20]"
+                        style={{ width: `${widthPct}%` }}
+                      />
+                    </div>
+                  )}
                 </button>
               );
             })}
@@ -433,43 +338,42 @@ export const OpportunitiesPage: React.FC = () => {
         </div>
 
         {/* B. Pipeline by Status & Department */}
-        <div className="bg-white border border-[#E2E5E8] rounded-md p-4 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-[#231F20]">
-              Pipeline by Status &amp; Department
-            </h2>
-            <span className="text-[11px] text-[#5F6368]">Click status chip to filter queue</span>
-          </div>
-
-          {/* Clickable Status Chips */}
-          <div className="flex flex-wrap gap-1.5">
-            {analytics.byStatus.map((s) => {
+        <div className="bg-white border border-[#E2E5E8] rounded-md p-3 space-y-3">
+          <h2 className="text-sm font-semibold text-[#231F20]">Pipeline by Status</h2>
+          <div className="space-y-1.5">
+            {analytics.byStatus.filter((s) => s.count > 0).map((s) => {
               const active = statusFilter === s.status;
+              const maxStatus = Math.max(1, ...analytics.byStatus.map((item) => item.estimatedCad));
+              const widthPct = s.estimatedCad > 0 ? Math.max(3, (s.estimatedCad / maxStatus) * 100) : 0;
               return (
                 <button
                   key={s.status}
                   type="button"
-                  onClick={() =>
-                    setStatusFilter((prev) => (prev === s.status ? 'all' : s.status))
-                  }
-                  className={`px-2.5 py-1 rounded border text-[11px] inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
-                    active
-                      ? 'bg-[#231F20] text-white border-[#231F20]'
-                      : `${STATUS_BADGE_STYLES[s.status]} hover:border-[#231F20]`
+                  aria-pressed={active}
+                  onClick={() => setStatusFilter((prev) => (prev === s.status ? 'all' : s.status))}
+                  className={`w-full text-left px-2 py-1.5 rounded border transition-colors cursor-pointer ${
+                    active ? 'bg-[#F8F9FA] border-[#231F20]' : 'border-transparent hover:bg-[#F8F9FA]'
                   }`}
                 >
-                  <span className="font-medium">{s.status}</span>
-                  <span className="font-mono font-semibold tabular-nums">{s.count}</span>
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="font-medium text-[#231F20]">
+                      {s.status}{' '}
+                      <span className="text-[11px] font-normal text-[#5F6368]">({s.count})</span>
+                    </span>
+                    <span className="font-mono tabular-nums font-semibold text-[#231F20]">
+                      {formatMoney(s.estimatedCad)}
+                    </span>
+                  </div>
+                  <div className="mt-1 h-1.5 bg-[#ECEEF0] rounded overflow-hidden">
+                    <div className="h-full rounded bg-[#5F6368]" style={{ width: `${widthPct}%` }} />
+                  </div>
                 </button>
               );
             })}
           </div>
 
-          {/* Horizontal Department Exposure Bars */}
-          <div className="space-y-2.5 pt-2 border-t border-[#E2E5E8]">
-            <div className="text-[11px] font-medium text-[#5F6368]">
-              Department Modeled / Exposed Value
-            </div>
+          <div className="space-y-2 pt-2 border-t border-[#E2E5E8]">
+            <div className="text-[11px] font-medium text-[#5F6368]">Estimated value by department</div>
             {sortedDepartments.map((d) => {
               const widthPct = d.estimatedCad > 0 ? Math.max(3, (d.estimatedCad / maxDeptEstCad) * 100) : 0;
               return (
@@ -572,48 +476,33 @@ export const OpportunitiesPage: React.FC = () => {
 
           <div className="divide-y divide-[#E2E5E8] max-h-[680px] overflow-y-auto">
             {filtered.map((opp) => {
-              const meta = OPPORTUNITY_CATEGORY_META[opp.category];
-              const vis = CATEGORY_VISUAL_SYSTEM[opp.category];
               const active = selectedOpp?.id === opp.id;
-
               return (
                 <button
                   key={opp.id}
                   type="button"
+                  aria-pressed={active}
                   onClick={() => selectOpportunity(opp)}
-                  className={`w-full text-left p-3.5 transition-colors cursor-pointer ${
-                    active ? 'bg-[#FDF2F1]' : 'bg-white hover:bg-[#F8F9FA]'
+                  className={`w-full text-left px-3 py-2.5 border-l-2 transition-colors cursor-pointer ${
+                    active
+                      ? 'bg-[#F8F9FA] border-[#E53C2E]'
+                      : 'bg-white border-transparent hover:bg-[#F8F9FA]'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2 text-[11px]">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span
-                        className={`px-1.5 py-0.5 text-[10px] border rounded font-medium shrink-0 ${vis.badgeCls}`}
-                      >
-                        {meta.shortLabel}
-                      </span>
-                      <span className="font-mono text-[#5F6368] truncate">
-                        {opp.sourceRecordId}
-                      </span>
-                    </div>
+                    <span className="font-mono text-[#5F6368] truncate">{opp.sourceRecordId}</span>
                     <span
-                      className={`px-1.5 py-0.5 text-[10px] border rounded font-medium shrink-0 ${
-                        STATUS_BADGE_STYLES[opp.status]
+                      className={`shrink-0 font-medium ${
+                        opp.status === 'Realized' ? 'text-[#15803D]' : 'text-[#5F6368]'
                       }`}
                     >
                       {opp.status}
                     </span>
                   </div>
-
-                  <div className="text-xs font-semibold text-[#231F20] mt-1.5 leading-snug">
-                    {opp.title}
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2 text-[11px] text-[#5F6368] mt-1.5">
-                    <span className="truncate">
-                      {opp.financialImpactType} · {getUserDisplayName(opp.ownerUserId)}
-                    </span>
-                    <span className="font-mono font-semibold text-[#231F20] tabular-nums shrink-0 text-xs">
+                  <div className="text-xs font-semibold text-[#231F20] mt-1 leading-snug">{opp.title}</div>
+                  <div className="flex items-center justify-between gap-2 text-[11px] text-[#5F6368] mt-1">
+                    <span className="truncate">{OPPORTUNITY_CATEGORY_META[opp.category].shortLabel}</span>
+                    <span className="font-mono font-semibold text-[#231F20] tabular-nums shrink-0">
                       {formatMoney(opp.estimatedAmountCad)}
                     </span>
                   </div>
@@ -649,69 +538,37 @@ export const OpportunitiesPage: React.FC = () => {
         >
           {selectedOpp ? (
             <div className="divide-y divide-[#E2E5E8]">
-              {/* 1. Opportunity Summary */}
-              <div className="p-5 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                    <span
-                      className={`px-1.5 py-0.5 text-[10px] border rounded font-medium ${
-                        CATEGORY_VISUAL_SYSTEM[selectedOpp.category].badgeCls
-                      }`}
-                    >
-                      {OPPORTUNITY_CATEGORY_META[selectedOpp.category].shortLabel}
-                    </span>
-                    <ProvenanceText
-                      provenance={selectedOpp.provenance}
-                      sourceRef={selectedOpp.sourceRecordId}
-                    />
+              <div className="p-4 space-y-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[11px] text-[#5F6368]">
+                      {selectedOpp.sourceRecordId} · {OPPORTUNITY_CATEGORY_META[selectedOpp.category].label}
+                    </div>
+                    <h3 className="text-base font-semibold text-[#231F20] leading-snug mt-0.5">
+                      {selectedOpp.title}
+                    </h3>
                   </div>
-                  <span
-                    className={`px-2 py-0.5 text-[11px] border rounded font-medium ${
-                      STATUS_BADGE_STYLES[selectedOpp.status]
-                    }`}
-                  >
-                    {selectedOpp.status}
-                  </span>
+                  <span className="text-[11px] font-medium text-[#5F6368] shrink-0">{selectedOpp.status}</span>
                 </div>
 
-                <div>
-                  <h3 className="text-base font-semibold text-[#231F20] leading-snug">
-                    {selectedOpp.title}
-                  </h3>
-                  <div className="text-xs text-[#5F6368] mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                    <span>{selectedOpp.financialImpactType}</span>
-                    <span>·</span>
-                    <span>{selectedOpp.department}</span>
-                    <span>·</span>
-                    <span>Owner: <strong className="text-[#231F20]">{getUserDisplayName(selectedOpp.ownerUserId)}</strong></span>
-                  </div>
-                </div>
-
-                <p className="text-xs text-[#231F20] leading-relaxed">{selectedOpp.description}</p>
-              </div>
-
-              {/* 2. Financial Impact Values */}
-              <div className="p-5 bg-[#F8F9FA]">
-                <div className="text-[11px] font-medium text-[#5F6368] mb-2">
-                  Financial Impact Progression ({selectedOpp.isGuaranteedRecoverable ? 'Confirmed' : 'Unverified until sign-off'})
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="p-3 bg-white border border-[#E2E5E8] rounded">
-                    <div className="text-[11px] text-[#5F6368]">Estimated Potential</div>
-                    <div className="text-base font-mono font-semibold text-[#231F20] tabular-nums mt-0.5">
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div>
+                    <div className="text-[11px] text-[#5F6368]">Estimated</div>
+                    <div className="font-semibold tabular-nums text-[#231F20] mt-0.5">
                       {formatMoney(selectedOpp.estimatedAmountCad)}
                     </div>
+                    <div className="text-[11px] text-[#5F6368] mt-0.5">{selectedOpp.financialImpactType}</div>
                   </div>
-                  <div className="p-3 bg-white border border-[#E2E5E8] rounded">
-                    <div className="text-[11px] text-[#5F6368]">Verified Amount</div>
-                    <div className="text-base font-mono font-semibold text-[#1D4ED8] tabular-nums mt-0.5">
+                  <div>
+                    <div className="text-[11px] text-[#5F6368]">Verified</div>
+                    <div className="font-semibold tabular-nums text-[#231F20] mt-0.5">
                       {formatMoney(selectedOpp.verifiedAmountCad)}
                     </div>
                   </div>
-                  <div className="p-3 bg-white border border-[#E2E5E8] rounded">
-                    <div className="text-[11px] text-[#5F6368]">Realized (Confirmed)</div>
+                  <div>
+                    <div className="text-[11px] text-[#5F6368]">Realized</div>
                     <div
-                      className={`text-base font-mono font-semibold tabular-nums mt-0.5 ${
+                      className={`font-semibold tabular-nums mt-0.5 ${
                         selectedOpp.realizedAmountCad > 0 ? 'text-[#15803D]' : 'text-[#231F20]'
                       }`}
                     >
@@ -719,33 +576,20 @@ export const OpportunitiesPage: React.FC = () => {
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* 3. Verification Gate / Blocker / Dependency */}
-              <div className="p-5 space-y-3">
-                <div className="p-3.5 bg-amber-50/60 border border-amber-200 rounded-md space-y-1.5 text-xs">
-                  <div className="font-semibold text-amber-950 flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4 text-[#B45309] shrink-0" />
-                    <span>Required Verification Gate</span>
-                  </div>
-                  <p className="text-[11px] text-amber-950 leading-relaxed">
-                    {selectedOpp.verificationRequired}
-                  </p>
-                </div>
-
+                <p className="text-xs text-[#231F20] leading-relaxed">{selectedOpp.description}</p>
+                <p className="text-[11px] text-[#5F6368] leading-relaxed">
+                  <span className="font-medium text-[#231F20]">Still required: </span>
+                  {selectedOpp.verificationRequired}
+                </p>
+                <ProvenanceText provenance={selectedOpp.provenance} sourceRef={selectedOpp.sourceRecordId} />
                 {selectedOpp.overlapWarning && (
-                  <div className="p-3 bg-white border border-amber-300 rounded-md flex items-start gap-2 text-[11px] text-[#231F20]">
-                    <AlertTriangle className="w-3.5 h-3.5 text-[#B45309] shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-[#5F6368] flex items-start gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                     <span>{selectedOpp.overlapWarning}</span>
-                  </div>
+                  </p>
                 )}
-              </div>
 
-              {/* 4. Actions & Navigation */}
-              <div className="px-5 py-3.5 bg-[#F8F9FA] flex flex-wrap items-center justify-between gap-2">
-                <span className="text-[11px] text-[#5F6368]">
-                  Trace underlying documentation &amp; investigation workflow
-                </span>
                 <div className="flex flex-wrap items-center gap-2">
                   {selectedOpp.sourceRecordType !== 'tariff_scenario' && (
                     <button
@@ -753,7 +597,7 @@ export const OpportunitiesPage: React.FC = () => {
                       onClick={() => openRecordById(selectedOpp.sourceRecordId)}
                       className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-[#231F20] bg-white border border-[#E2E5E8] rounded hover:border-[#231F20] cursor-pointer"
                     >
-                      <span>Inspect Source ({selectedOpp.sourceRecordId})</span>
+                      <span>Inspect {selectedOpp.sourceRecordId}</span>
                       <ArrowUpRight className="w-3.5 h-3.5" />
                     </button>
                   )}
@@ -761,17 +605,16 @@ export const OpportunitiesPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => navigate('/investigations')}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#E53C2E] bg-white border border-[#E2E5E8] rounded hover:border-[#E53C2E] cursor-pointer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#231F20] bg-white border border-[#E2E5E8] rounded hover:border-[#231F20] cursor-pointer"
                     >
                       <Compass className="w-3.5 h-3.5" />
-                      <span>Open Investigation</span>
+                      <span>Open Investigations</span>
                     </button>
                   )}
                 </div>
               </div>
 
-              {/* 5. Workflow Update Controls */}
-              <div className="p-5">
+              <div className="p-4">
                 {canEdit ? (
                   <form
                     onSubmit={(e) => {
@@ -791,7 +634,7 @@ export const OpportunitiesPage: React.FC = () => {
                     className="space-y-3 text-xs"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-semibold text-[#231F20]">Workflow Update</span>
+                      <span className="font-semibold text-[#231F20]">Next Action</span>
                       {!canRealize && (
                         <span className="inline-flex items-center gap-1 text-[11px] text-[#5F6368]">
                           <Lock className="w-3 h-3" />
