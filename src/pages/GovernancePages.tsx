@@ -11,8 +11,8 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import { DATA_DISCREPANCIES } from '../data/caseSeed';
-import { getRoleDefinition } from '../domain/permissions';
+import { CUSTOMS_ENTRIES, DATA_DISCREPANCIES, INCOME_STATEMENTS, IRREGULAR_COSTS } from '../data/caseSeed';
+import { filterCustomsEntriesForUser, filterIrregularCostsForUser, getRoleDefinition } from '../domain/permissions';
 import { runFinancialAcceptanceChecks } from '../domain/rulesEngine';
 import { AuditEvent } from '../types/domain';
 import { useApp } from '../context/AppContext';
@@ -69,26 +69,87 @@ function formatActionLabel(actionType: AuditEvent['actionType']): string {
   return ACTION_TYPE_LABELS[actionType] ?? actionType.replace(/_/g, ' ');
 }
 
-function getActionOutcomeTone(ev: AuditEvent): { label: string; cls: string } {
-  const newState = ev.newState;
-  if (ev.actionType === 'record_rejected' || ev.actionType === 'request_rejected') {
-    return { label: newState ?? 'Rejected', cls: 'text-[#DC2626] bg-red-50 border-red-200' };
-  }
-  if (ev.actionType === 'record_quarantined') {
-    return { label: newState ?? 'Quarantined', cls: 'text-[#B45309] bg-amber-50 border-amber-200' };
-  }
+function mapRecordedStatus(value: string): string {
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (normalized.includes('reject')) return 'Rejected';
+  if (normalized.includes('quarant')) return 'Quarantined';
   if (
-    ev.actionType === 'request_approved' ||
-    ev.actionType === 'correction_approved' ||
-    ev.actionType === 'import_authorized' ||
-    ev.actionType === 'report_exported'
+    normalized === 'approved' ||
+    normalized === 'demo_approved' ||
+    normalized === 'authorized_committed' ||
+    normalized.includes('approv')
   ) {
-    return { label: newState ?? 'Completed', cls: 'text-[#15803D] bg-emerald-50 border-emerald-200' };
+    return 'Approved';
   }
-  if (newState) {
-    return { label: newState, cls: 'text-[#231F20] bg-[#F5F6F7] border-[#E2E5E8]' };
+  if (normalized.includes('pending') || normalized === 'pending_verification') return 'Pending';
+  if (normalized === 'in_review') return 'In Review';
+  if (normalized === 'additional_evidence_required') return 'Additional Evidence Required';
+  if (normalized === 'submitted') return 'Submitted';
+  if (normalized.includes('stage') || normalized === 'staged_preview' || normalized === 'submitted_for_authorization') {
+    return 'Staged';
   }
-  return { label: 'Recorded', cls: 'text-[#5F6368] bg-[#F5F6F7] border-[#E2E5E8]' };
+  return value.trim();
+}
+
+function recordedOutcome(ev: AuditEvent): string | null {
+  const recorded = ev.newState?.trim();
+  if (recorded) return mapRecordedStatus(recorded);
+  switch (ev.actionType) {
+    case 'request_rejected':
+    case 'record_rejected':
+    case 'investigation_dismissed':
+      return 'Rejected';
+    case 'record_quarantined':
+      return 'Quarantined';
+    case 'request_approved':
+    case 'correction_approved':
+    case 'import_authorized':
+      return 'Approved';
+    case 'file_uploaded':
+    case 'import_submitted':
+      return 'Staged';
+    default:
+      return null;
+  }
+}
+
+function outcomeTone(label: string | null): string {
+  if (label === 'Rejected') return 'text-[#DC2626] bg-red-50 border-red-200';
+  if (label === 'Approved') return 'text-[#15803D] bg-emerald-50 border-emerald-200';
+  if (label === 'Quarantined' || label === 'Pending') return 'text-[#B45309] bg-amber-50 border-amber-200';
+  return 'text-[#231F20] bg-[#F5F6F7] border-[#E2E5E8]';
+}
+
+function batchStatusLabel(status: string): string {
+  switch (status) {
+    case 'staged_preview':
+      return 'Staged';
+    case 'submitted_for_authorization':
+      return 'Pending';
+    case 'authorized_committed':
+      return 'Authorized';
+    case 'rejected':
+      return 'Rejected';
+    case 'quarantined':
+      return 'Quarantined';
+    case 'validated':
+      return 'Validated';
+    default:
+      return status;
+  }
+}
+
+function formatAuditTimestamp(iso: string): string {
+  const ts = Date.parse(iso);
+  if (Number.isNaN(ts)) return iso;
+  return new Intl.DateTimeFormat('en-CA', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'America/Toronto',
+  }).format(ts);
 }
 
 function summarizeEvent(ev: AuditEvent): string {
@@ -97,8 +158,10 @@ function summarizeEvent(ev: AuditEvent): string {
   return `${raw.slice(0, 122).trimEnd()}...`;
 }
 
+const FINANCIAL_DISCREPANCY_IDS = new Set(['DISC-03', 'DISC-04']);
+
 export const AuditHistoryPage: React.FC = () => {
-  const { state, hasPermission } = useApp();
+  const { state, activeUser, hasPermission } = useApp();
   const checks = useMemo(() => runFinancialAcceptanceChecks(), []);
   const passedChecksCount = useMemo(() => checks.filter((c) => c.passed).length, [checks]);
   const allPassed = passedChecksCount === checks.length;
@@ -109,52 +172,98 @@ export const AuditHistoryPage: React.FC = () => {
   // Activity Log state
   const [auditSearch, setAuditSearch] = useState('');
   const [actionFilter, setActionFilter] = useState('all');
+  const [outcomeFilter, setOutcomeFilter] = useState('all');
   const [actorFilter, setActorFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState<DateRangeFilter>('all');
   const [batchFilter, setBatchFilter] = useState('all');
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+  const [expandedBatchId, setExpandedBatchId] = useState<string | null>(null);
 
   // Data Verification state
   const [checksTableExpanded, setChecksTableExpanded] = useState(false);
   const [expandedDiscrepancyId, setExpandedDiscrepancyId] = useState<string | null>(null);
   const [unitRulesExpanded, setUnitRulesExpanded] = useState(false);
 
+  const canSeeFinancials = hasPermission('view_financials');
+  const canSeeTrade = hasPermission('view_trade');
+
+  const scopedAuditEvents = useMemo(() => {
+    const visibleIrregular = new Set(filterIrregularCostsForUser(activeUser, IRREGULAR_COSTS).map((item) => item.id));
+    const visibleCustoms = new Set(filterCustomsEntriesForUser(activeUser, CUSTOMS_ENTRIES).map((item) => item.id));
+    return state.auditEvents.filter((ev) => {
+      if (ev.targetRecordId && IRREGULAR_COSTS.some((item) => item.id === ev.targetRecordId)) {
+        return visibleIrregular.has(ev.targetRecordId);
+      }
+      if (ev.targetRecordId && CUSTOMS_ENTRIES.some((item) => item.id === ev.targetRecordId)) {
+        return visibleCustoms.has(ev.targetRecordId);
+      }
+      if (!canSeeFinancials && ev.batchId) {
+        const batch = state.importBatches.find((item) => item.id === ev.batchId);
+        if (batch?.targetDomain === 'ledger') return false;
+      }
+      return true;
+    });
+  }, [activeUser, canSeeFinancials, state.auditEvents, state.importBatches]);
+
   const uniqueActions = useMemo(
-    () => Array.from(new Set(state.auditEvents.map((e) => e.actionType))).sort(),
-    [state.auditEvents]
+    () => Array.from(new Set(scopedAuditEvents.map((e) => e.actionType))).sort(),
+    [scopedAuditEvents]
   );
+
+  const uniqueOutcomes = useMemo(() => {
+    const labels = new Set<string>();
+    scopedAuditEvents.forEach((event) => {
+      const label = recordedOutcome(event);
+      if (label) labels.add(label);
+    });
+    return Array.from(labels).sort();
+  }, [scopedAuditEvents]);
 
   const uniqueActors = useMemo(() => {
     const names = new Set<string>();
-    state.auditEvents.forEach((e) => names.add(e.actorName));
+    scopedAuditEvents.forEach((e) => names.add(e.actorName));
     return Array.from(names).sort();
-  }, [state.auditEvents]);
+  }, [scopedAuditEvents]);
 
   const filteredAuditEvents = useMemo(() => {
     const q = auditSearch.trim().toLowerCase();
-    const now = new Date();
-    const todayKey = now.toISOString().slice(0, 10);
-    const sevenDaysAgoMs = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+    const todayKey = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Toronto',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    const sevenDaysAgoMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
 
-    return state.auditEvents.filter((ev) => {
+    return scopedAuditEvents.filter((ev) => {
       if (actionFilter !== 'all' && ev.actionType !== actionFilter) return false;
+      if (outcomeFilter !== 'all' && (recordedOutcome(ev) ?? 'Not recorded') !== outcomeFilter) return false;
       if (actorFilter !== 'all') {
         if (actorFilter === '__system__' && (ev.actorType ?? 'user') !== 'system') return false;
         if (actorFilter !== '__system__' && ev.actorName !== actorFilter) return false;
       }
       if (batchFilter !== 'all' && ev.batchId !== batchFilter) return false;
       if (dateFilter === 'today') {
-        if (ev.timestampIso.slice(0, 10) !== todayKey) return false;
+        const eventDay = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'America/Toronto',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        }).format(new Date(ev.timestampIso));
+        if (eventDay !== todayKey) return false;
       } else if (dateFilter === 'last_7_days') {
         const ts = Date.parse(ev.timestampIso);
         if (!Number.isNaN(ts) && ts < sevenDaysAgoMs) return false;
       }
       if (q) {
+        const outcome = recordedOutcome(ev) ?? '';
         const hit =
           ev.id.toLowerCase().includes(q) ||
           ev.summary.toLowerCase().includes(q) ||
           ev.actorName.toLowerCase().includes(q) ||
           formatActionLabel(ev.actionType).toLowerCase().includes(q) ||
+          outcome.toLowerCase().includes(q) ||
           (ev.targetRecordId ?? '').toLowerCase().includes(q) ||
           (ev.authorizationRef ?? '').toLowerCase().includes(q) ||
           (ev.reason ?? '').toLowerCase().includes(q);
@@ -162,14 +271,22 @@ export const AuditHistoryPage: React.FC = () => {
       }
       return true;
     });
-  }, [actionFilter, actorFilter, auditSearch, batchFilter, dateFilter, state.auditEvents]);
+  }, [actionFilter, actorFilter, auditSearch, batchFilter, dateFilter, outcomeFilter, scopedAuditEvents]);
 
   const hasActiveActivityFilters =
     auditSearch.trim().length > 0 ||
     actionFilter !== 'all' ||
+    outcomeFilter !== 'all' ||
     actorFilter !== 'all' ||
     dateFilter !== 'all' ||
     batchFilter !== 'all';
+
+  const visibleDiscrepancies = DATA_DISCREPANCIES.filter(
+    (item) => canSeeFinancials || !FINANCIAL_DISCREPANCY_IDS.has(item.id)
+  );
+  const visibleBatches = state.importBatches.filter(
+    (batch) => canSeeFinancials || batch.targetDomain !== 'ledger'
+  );
 
   if (!hasPermission('view_audit_history')) {
     return (
@@ -210,7 +327,7 @@ export const AuditHistoryPage: React.FC = () => {
           <div className="space-y-1">
             <p className="font-semibold text-[#231F20]">Demonstration Audit Persistence & Scope</p>
             <p className="leading-relaxed">
-              The Activity Log tracks session actions locally for review (resettable via Settings) rather than writing to a production ERP audit server. Reference checks verify official case figures against Appendix baselines and do not validate arbitrary user uploads.
+              The activity log is kept in this browser. Resetting demonstration workspace data does not delete it, and it is not written to a production ERP. Reference checks compare official case figures with Appendix baselines. A validated upload remains demonstration data.
             </p>
           </div>
           <button
@@ -238,7 +355,7 @@ export const AuditHistoryPage: React.FC = () => {
           }`}
         >
           Activity Log{' '}
-          <span className="ml-1 text-[11px] text-[#5F6368] tabular-nums">({state.auditEvents.length})</span>
+          <span className="ml-1 text-[11px] text-[#5F6368] tabular-nums">({scopedAuditEvents.length})</span>
         </button>
 
         <button
@@ -282,12 +399,12 @@ export const AuditHistoryPage: React.FC = () => {
             </div>
 
             <select
-              aria-label="Filter by action type"
+              aria-label="Filter by event type"
               value={actionFilter}
               onChange={(e) => setActionFilter(e.target.value)}
               className="border border-[#E2E5E8] rounded-md px-2.5 py-1.5 bg-[#F8F9FA] text-[#231F20] focus:bg-white focus:outline-none focus:border-[#231F20]"
             >
-              <option value="all">All Actions</option>
+              <option value="all">All Event Types</option>
               {uniqueActions.map((a) => (
                 <option key={a} value={a}>
                   {formatActionLabel(a)}
@@ -296,46 +413,28 @@ export const AuditHistoryPage: React.FC = () => {
             </select>
 
             <select
-              aria-label="Filter by user"
-              value={actorFilter}
-              onChange={(e) => setActorFilter(e.target.value)}
+              aria-label="Filter by outcome"
+              value={outcomeFilter}
+              onChange={(e) => setOutcomeFilter(e.target.value)}
               className="border border-[#E2E5E8] rounded-md px-2.5 py-1.5 bg-[#F8F9FA] text-[#231F20] focus:bg-white focus:outline-none focus:border-[#231F20]"
             >
-              <option value="all">All Users</option>
-              <option value="__system__">Validation Engine</option>
-              {uniqueActors.map((actor) => (
-                <option key={actor} value={actor}>
-                  {actor}
+              <option value="all">All Outcomes</option>
+              <option value="Not recorded">Not recorded</option>
+              {uniqueOutcomes.map((outcome) => (
+                <option key={outcome} value={outcome}>
+                  {outcome}
                 </option>
               ))}
             </select>
 
-            <select
-              aria-label="Filter by date"
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value as DateRangeFilter)}
-              className="border border-[#E2E5E8] rounded-md px-2.5 py-1.5 bg-[#F8F9FA] text-[#231F20] focus:bg-white focus:outline-none focus:border-[#231F20]"
+            <button
+              type="button"
+              aria-expanded={moreFiltersOpen}
+              onClick={() => setMoreFiltersOpen((open) => !open)}
+              className="px-2.5 py-1.5 border border-[#E2E5E8] rounded-md bg-white text-[#231F20] cursor-pointer"
             >
-              <option value="all">All Dates</option>
-              <option value="today">Today</option>
-              <option value="last_7_days">Last 7 Days</option>
-            </select>
-
-            {state.importBatches.length > 0 && (
-              <select
-                aria-label="Filter by import batch"
-                value={batchFilter}
-                onChange={(e) => setBatchFilter(e.target.value)}
-                className="border border-[#E2E5E8] rounded-md px-2.5 py-1.5 bg-[#F8F9FA] text-[#231F20] max-w-[180px] focus:bg-white focus:outline-none focus:border-[#231F20]"
-              >
-                <option value="all">All Import Batches</option>
-                {state.importBatches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.fileName}
-                  </option>
-                ))}
-              </select>
-            )}
+              More filters
+            </button>
 
             {hasActiveActivityFilters && (
               <button
@@ -343,6 +442,7 @@ export const AuditHistoryPage: React.FC = () => {
                 onClick={() => {
                   setAuditSearch('');
                   setActionFilter('all');
+                  setOutcomeFilter('all');
                   setActorFilter('all');
                   setDateFilter('all');
                   setBatchFilter('all');
@@ -353,75 +453,113 @@ export const AuditHistoryPage: React.FC = () => {
               </button>
             )}
           </div>
-
-          {filteredAuditEvents.length === 0 ? (
-            <div className="p-8 text-center space-y-1">
-              <p className="text-sm font-medium text-[#231F20]">No matching activity events</p>
-              <p className="text-xs text-[#5F6368]">
-                {state.auditEvents.length === 0
-                  ? 'Session governance, upload, and export actions appear here as they occur.'
-                  : 'Try clearing active search or filter criteria.'}
-              </p>
+          {moreFiltersOpen && (
+            <div className="px-3.5 py-2.5 border-b border-[#E2E5E8] flex flex-wrap items-center gap-2 text-xs bg-[#F8F9FA]">
+              <select
+                aria-label="Filter by actor"
+                value={actorFilter}
+                onChange={(e) => setActorFilter(e.target.value)}
+                className="border border-[#E2E5E8] rounded-md px-2.5 py-1.5 bg-white text-[#231F20] focus:outline-none focus:border-[#231F20]"
+              >
+                <option value="all">All Actors</option>
+                <option value="__system__">Validation Engine</option>
+                {uniqueActors.map((actor) => (
+                  <option key={actor} value={actor}>
+                    {actor}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label="Filter by date"
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value as DateRangeFilter)}
+                className="border border-[#E2E5E8] rounded-md px-2.5 py-1.5 bg-white text-[#231F20] focus:outline-none focus:border-[#231F20]"
+              >
+                <option value="all">All Dates</option>
+                <option value="today">Today</option>
+                <option value="last_7_days">Last 7 Days</option>
+              </select>
+              {visibleBatches.length > 0 && (
+                <select
+                  aria-label="Filter by import batch"
+                  value={batchFilter}
+                  onChange={(e) => setBatchFilter(e.target.value)}
+                  className="border border-[#E2E5E8] rounded-md px-2.5 py-1.5 bg-white text-[#231F20] max-w-[180px] focus:outline-none focus:border-[#231F20]"
+                >
+                  <option value="all">All Import Batches</option>
+                  {visibleBatches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.fileName}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left border-collapse">
+          )}
+
+          <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-xs text-left border-collapse">
                 <thead className="bg-[#F8F9FA] border-b border-[#E2E5E8] text-[#5F6368]">
                   <tr>
-                    <th className="py-2.5 px-4 font-medium">Action</th>
-                    <th className="py-2.5 px-4 font-medium">User</th>
-                    <th className="py-2.5 px-4 font-medium">Date & Time</th>
-                    <th className="py-2.5 px-4 font-medium">Affected Record</th>
-                    <th className="py-2.5 px-4 font-medium">Summary & Outcome</th>
+                    <th className="py-2.5 px-3 font-medium whitespace-nowrap">Timestamp</th>
+                    <th className="py-2.5 px-3 font-medium">Actor</th>
+                    <th className="py-2.5 px-3 font-medium">Action / Event Type</th>
+                    <th className="py-2.5 px-3 font-medium">Related Record</th>
+                    <th className="py-2.5 px-3 font-medium">Outcome / Status</th>
+                    <th className="py-2.5 px-3 font-medium">Summary</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E2E5E8]">
+                  {filteredAuditEvents.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-8 text-center">
+                        <p className="text-sm font-medium text-[#231F20]">No matching activity events</p>
+                        <p className="text-xs text-[#5F6368] mt-1">
+                          {scopedAuditEvents.length === 0
+                            ? 'Session governance, upload, and export actions appear here as they occur.'
+                            : 'Try clearing active search or filter criteria.'}
+                        </p>
+                      </td>
+                    </tr>
+                  )}
                   {filteredAuditEvents.map((ev) => {
                     const isExpanded = expandedEventId === ev.id;
-                    const outcome = getActionOutcomeTone(ev);
+                    const outcome = recordedOutcome(ev);
                     return (
                       <React.Fragment key={ev.id}>
                         <tr
                           onClick={() => setExpandedEventId(isExpanded ? null : ev.id)}
-                          className={`cursor-pointer transition-colors ${
+                          className={`cursor-pointer align-top transition-colors ${
                             isExpanded ? 'bg-[#F5F6F7]' : 'hover:bg-[#F8F9FA]'
                           }`}
                         >
-                          <td className="py-2.5 px-4 whitespace-nowrap">
-                            <div className="flex items-center gap-1.5 font-medium text-[#231F20]">
+                          <td className="py-2.5 px-3 text-[#5F6368] tabular-nums whitespace-nowrap">
+                            <span className="inline-flex items-center gap-1.5">
                               <ChevronRight
-                                className={`w-3.5 h-3.5 text-[#5F6368] transition-transform ${
+                                className={`w-3.5 h-3.5 transition-transform ${
                                   isExpanded ? 'rotate-90 text-[#231F20]' : ''
                                 }`}
                               />
-                              <span>{formatActionLabel(ev.actionType)}</span>
-                            </div>
+                              <span title={ev.timestampIso}>{formatAuditTimestamp(ev.timestampIso)}</span>
+                            </span>
                           </td>
-                          <td className="py-2.5 px-4 whitespace-nowrap">
+                          <td className="py-2.5 px-3">
                             <div className="font-medium text-[#231F20]">{ev.actorName}</div>
                             <div className="text-[11px] text-[#5F6368]">{ev.actorRoleLabel}</div>
                           </td>
-                          <td className="py-2.5 px-4 text-[#5F6368] tabular-nums whitespace-nowrap">
-                            {new Date(ev.timestampIso).toLocaleString()}
+                          <td className="py-2.5 px-3 font-medium text-[#231F20]">{formatActionLabel(ev.actionType)}</td>
+                          <td className="py-2.5 px-3 font-medium text-[#231F20] break-all">{ev.targetRecordId ?? '—'}</td>
+                          <td className="py-2.5 px-3 whitespace-nowrap">
+                            <span className={`px-2 py-0.5 rounded border text-[11px] font-medium ${outcomeTone(outcome)}`}>
+                              {outcome ?? 'Not recorded'}
+                            </span>
                           </td>
-                          <td className="py-2.5 px-4 font-medium text-[#231F20] whitespace-nowrap">
-                            {ev.targetRecordId ?? '—'}
-                          </td>
-                          <td className="py-2.5 px-4">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <span className="text-[#231F20]">{summarizeEvent(ev)}</span>
-                              <span
-                                className={`px-2 py-0.5 rounded border text-[11px] font-medium whitespace-nowrap ${outcome.cls}`}
-                              >
-                                {outcome.label}
-                              </span>
-                            </div>
-                          </td>
+                          <td className="py-2.5 px-3 text-[#231F20] min-w-[16rem] break-words">{summarizeEvent(ev)}</td>
                         </tr>
 
                         {isExpanded && (
                           <tr className="bg-[#F8F9FA]">
-                            <td colSpan={5} className="px-4 py-3.5 border-t border-[#E2E5E8]">
+                            <td colSpan={6} className="px-4 py-3.5 border-t border-[#E2E5E8]">
                               <div className="space-y-3 text-xs">
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                                   <div>
@@ -481,7 +619,6 @@ export const AuditHistoryPage: React.FC = () => {
                 </tbody>
               </table>
             </div>
-          )}
         </section>
       )}
 
@@ -490,7 +627,75 @@ export const AuditHistoryPage: React.FC = () => {
       {/* ============================================================ */}
       {activeTab === 'verification' && (
         <div className="space-y-4">
-          {/* Compact Reference Check Summary + Expandable Table */}
+          <section className="bg-white border border-[#E2E5E8] rounded-md p-4 space-y-3">
+            <div>
+              <h2 className="text-sm font-semibold text-[#231F20]">Sources and coverage</h2>
+              <p className="text-xs text-[#5F6368] mt-0.5">
+                Official case records come from the Appendix dataset. Uploads in this browser stay demonstration data even after validation or authorization.
+              </p>
+            </div>
+            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div>
+                <dt className="text-[#5F6368]">Official case source</dt>
+                <dd className="text-[#231F20] mt-0.5">Appendix competition dataset · official case records</dd>
+              </div>
+              {canSeeTrade && (
+                <div>
+                  <dt className="text-[#5F6368]">Customs coverage</dt>
+                  <dd className="text-[#231F20] mt-0.5 tabular-nums">{CUSTOMS_ENTRIES.length} official customs entries</dd>
+                </div>
+              )}
+              {canSeeFinancials && (
+                <div>
+                  <dt className="text-[#5F6368]">Financial coverage</dt>
+                  <dd className="text-[#231F20] mt-0.5 tabular-nums">
+                    {INCOME_STATEMENTS.length} income statements · {IRREGULAR_COSTS.length} irregular cost records
+                  </dd>
+                </div>
+              )}
+              <div>
+                <dt className="text-[#5F6368]">Uploaded demonstration data</dt>
+                <dd className="text-[#231F20] mt-0.5 tabular-nums">
+                  {visibleBatches.length === 0 ? 'None in this browser' : `${visibleBatches.length} batch${visibleBatches.length === 1 ? '' : 'es'}`}
+                </dd>
+              </div>
+            </dl>
+            {visibleBatches.length > 0 && (
+              <div className="border border-[#E2E5E8] rounded-md divide-y divide-[#E2E5E8]">
+                {visibleBatches.map((batch) => {
+                  const open = expandedBatchId === batch.id;
+                  return (
+                    <div key={batch.id}>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedBatchId(open ? null : batch.id)}
+                        aria-expanded={open}
+                        className="w-full px-3 py-2 text-left flex items-center justify-between gap-3 hover:bg-[#F8F9FA] cursor-pointer"
+                      >
+                        <span className="min-w-0">
+                          <span className="block text-xs font-medium text-[#231F20] break-words">{batch.fileName}</span>
+                          <span className="block text-[11px] text-[#5F6368] mt-0.5">
+                            {batch.targetDomain} · {batchStatusLabel(batch.status)} · demonstration upload
+                          </span>
+                        </span>
+                        <ChevronDown className={`w-4 h-4 text-[#5F6368] shrink-0 ${open ? 'rotate-180' : ''}`} />
+                      </button>
+                      {open && (
+                        <div className="px-3 pb-3 text-xs text-[#5F6368] space-y-1">
+                          <p className="tabular-nums">
+                            {batch.recordCount} records · {batch.validatedCount} validated · {batch.quarantinedCount} quarantined · {batch.rejectedCount} rejected
+                          </p>
+                          <p>Provenance: {PROVENANCE_LABELS[batch.provenance] ?? 'User uploaded dataset'}. Validation does not make these official case records.</p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          {canSeeFinancials && (
           <section className="bg-white border border-[#E2E5E8] rounded-md overflow-hidden">
             <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-start gap-3">
@@ -502,7 +707,7 @@ export const AuditHistoryPage: React.FC = () => {
                     {passedChecksCount} / {checks.length} Financial Reference Checks Passed
                   </h2>
                   <p className="text-xs text-[#5F6368]">
-                    Verifies normalized official case repository values against published Appendix baselines. Does not validate user-uploaded datasets.
+                    Compares official case figures with Appendix baselines. It does not validate uploaded files or turn them into case records.
                   </p>
                 </div>
               </div>
@@ -553,12 +758,13 @@ export const AuditHistoryPage: React.FC = () => {
               </div>
             )}
           </section>
+          )}
 
           {/* Documented Source Discrepancies */}
           <section className="bg-white border border-[#E2E5E8] rounded-md p-4 space-y-3">
             <div>
               <h2 className="text-sm font-semibold text-[#231F20]">
-                Documented Source Discrepancies ({DATA_DISCREPANCIES.length})
+                Unresolved source discrepancies ({visibleDiscrepancies.length})
               </h2>
               <p className="text-xs text-[#5F6368]">
                 Conflicting or differently scaled Appendix figures are preserved verbatim without silent alteration.
@@ -566,7 +772,7 @@ export const AuditHistoryPage: React.FC = () => {
             </div>
 
             <div className="divide-y divide-[#E2E5E8] border border-[#E2E5E8] rounded-md">
-              {DATA_DISCREPANCIES.map((d) => {
+              {visibleDiscrepancies.map((d) => {
                 const expanded = expandedDiscrepancyId === d.id;
                 return (
                   <div key={d.id}>
@@ -672,8 +878,8 @@ export const SettingsAccessPage: React.FC = () => {
       <section className="bg-white border border-[#E2E5E8] rounded-md p-5 space-y-4">
         <div>
           <h2 className="text-sm font-semibold text-[#231F20]">Preferences</h2>
-          <p className="text-xs text-[#5F6368] mt-0.5">
-            Personalize reporting display currency and navigation layout for your current session.
+            <p className="text-xs text-[#5F6368] mt-0.5">
+            Reporting currency and sidebar width for this browser.
           </p>
         </div>
 
@@ -868,7 +1074,7 @@ export const SettingsAccessPage: React.FC = () => {
           <div>
             <h2 className="text-sm font-semibold text-[#231F20]">Workspace Management</h2>
             <p className="text-xs text-[#5F6368] mt-0.5">
-              Signed-in session and workspace reset. Sign out before using another account.
+              Sign out before using another account. Reset clears this browser’s demonstration workspace only.
             </p>
           </div>
 
@@ -883,7 +1089,7 @@ export const SettingsAccessPage: React.FC = () => {
             </button>
           ) : (
             <div className="flex flex-wrap items-center gap-2 bg-red-50 border border-red-200 rounded-md px-3 py-1.5 text-xs">
-              <span className="text-red-900 font-medium">Clear uploads, review queue, notifications &amp; edits?</span>
+              <span className="text-red-900 font-medium">Clear this browser’s uploads, drafts, and review items? Official case records, accounts, and audit history stay.</span>
               <button
                 type="button"
                 onClick={() => {
@@ -946,7 +1152,7 @@ export const SettingsAccessPage: React.FC = () => {
                 <strong className="text-[#231F20]">Dataset Scope:</strong> Financial and customs analytics cover the competition case period (Q4 2024 – Q3 2026) and do not connect to a live SKYJACK ERP server.
               </p>
               <p>
-                <strong className="text-[#231F20]">Session Changes:</strong> Uploaded batches, investigation updates, approval decisions, notifications, and report drafts persist in your browser session and can be restored anytime using <strong>Reset Demo State</strong>.
+                <strong className="text-[#231F20]">Session Changes:</strong> Uploads, investigation updates, approval decisions, and report drafts stay in this browser until Reset Demo State clears them. Official Appendix records, accounts, and the audit log are not deleted.
               </p>
               <p>
                 <strong className="text-[#231F20]">Currency &amp; Scenarios:</strong> USD reporting values use a static demonstration conversion rate (1 CAD = 0.72 USD). Tariff simulator projections represent hypothetical scenarios only.

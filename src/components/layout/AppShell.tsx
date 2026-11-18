@@ -55,7 +55,6 @@ const NAV_ITEMS: NavItem[] = [
   { route: '/reports', label: 'Report Studio', group: 'Intelligence', icon: FileSpreadsheet },
   { route: '/data-gateway', label: 'Data Gateway', group: 'Governance', icon: UploadCloud },
   { route: '/approvals', label: 'Approvals', group: 'Governance', icon: FileCheck2 },
-  { route: '/audit', label: 'Audit History', group: 'Governance', icon: History },
 ];
 
 const NAV_GROUPS: NavGroup[] = ['Workspace', 'Operations', 'Intelligence', 'Governance'];
@@ -197,14 +196,14 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
 
         {/* Sticky Enterprise Sidebar (#231F20) */}
         <aside
-          className={`fixed inset-y-0 left-0 z-40 lg:sticky lg:top-0 lg:h-screen flex flex-col bg-[#231F20] text-white border-r border-white/[0.08] transition-[width,transform] duration-200 shrink-0 print:hidden ${
+          className={`fixed inset-y-0 left-0 z-40 lg:sticky lg:top-0 lg:h-screen flex flex-col bg-[#231F20] text-white border-r border-white/[0.08] transition-transform duration-200 shrink-0 print:hidden ${
             sidebarCollapsed ? 'lg:w-[70px]' : 'lg:w-[244px]'
           } ${mobileNavOpen ? 'translate-x-0 w-[244px]' : '-translate-x-full lg:translate-x-0'}`}
         >
           {/* Top-Left SKYJACK Branding */}
           <div
-            className={`border-b border-white/[0.08] shrink-0 flex items-center ${
-              sidebarCollapsed ? 'flex-col justify-center gap-2 py-3 px-2' : 'h-[72px] px-5 justify-between'
+            className={`border-b border-white/[0.08] shrink-0 flex items-center h-[72px] ${
+              sidebarCollapsed ? 'lg:flex-col lg:justify-center lg:gap-1 lg:px-1.5 px-5 justify-between' : 'px-5 justify-between'
             }`}
           >
             <button
@@ -213,7 +212,12 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
               className="text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E53C2E] rounded cursor-pointer"
               aria-label="SKYJACK Overview"
             >
-              <SkyjackLogo variant="dark-sidebar" collapsed={sidebarCollapsed} />
+              <span className={sidebarCollapsed ? 'lg:hidden' : undefined}>
+                <SkyjackLogo variant="dark-sidebar" />
+              </span>
+              <span className={sidebarCollapsed ? 'hidden lg:inline-flex' : 'hidden'}>
+                <SkyjackLogo variant="dark-sidebar" collapsed />
+              </span>
             </button>
 
             <button
@@ -242,11 +246,9 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
               const items = NAV_ITEMS.filter((item) => item.group === group);
               return (
                 <div key={group}>
-                  {!sidebarCollapsed && (
-                    <div className="px-2.5 mb-1 text-[11px] font-medium tracking-[0.02em] text-[#8E9195]">
-                      {group}
-                    </div>
-                  )}
+                  <div className="px-2.5 mb-1 h-4 overflow-hidden text-[11px] font-medium tracking-[0.02em] text-[#8E9195]">
+                    <span className={sidebarCollapsed ? 'lg:hidden' : undefined}>{group}</span>
+                  </div>
                   <div className="space-y-0.5">
                     {items.map((item) => {
                       const Icon = item.icon;
@@ -268,11 +270,11 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                                 : `${item.label} (Restricted for ${activeTitleSub})`
                               : !allowed
                                 ? `Restricted for ${activeTitleSub}`
-                                : undefined
+                                : item.label
                           }
                           aria-current={isActive ? 'page' : undefined}
                           className={`group w-full flex items-center ${
-                            sidebarCollapsed ? 'justify-center px-2' : 'justify-between px-2.5'
+                            sidebarCollapsed ? 'lg:justify-center lg:px-2 justify-between px-2.5' : 'justify-between px-2.5'
                           } gap-2 py-1.5 rounded-md text-[13px] transition-colors duration-150 cursor-pointer whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E53C2E] ${
                             isActive
                               ? 'bg-white/[0.10] text-white font-medium ring-1 ring-white/[0.08]'
@@ -291,10 +293,10 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                                     : 'text-[#6A6C6F]'
                               }`}
                             />
-                            {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
+                            <span className={`truncate ${sidebarCollapsed ? 'lg:hidden' : ''}`}>{item.label}</span>
                           </span>
-                          {!sidebarCollapsed && !allowed && (
-                            <Lock className="w-3 h-3 text-[#6A6C6F] shrink-0" aria-hidden="true" />
+                          {!allowed && (
+                            <Lock className={`w-3 h-3 text-[#6A6C6F] shrink-0 ${sidebarCollapsed ? 'lg:hidden' : ''}`} aria-hidden="true" />
                           )}
                         </button>
                       );
@@ -309,7 +311,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
           <div ref={profileRef} className="relative border-t border-white/[0.08] p-2.5 shrink-0">
             <div
               className={`flex ${
-                sidebarCollapsed ? 'flex-col items-center gap-1.5' : 'items-center gap-1'
+                sidebarCollapsed ? 'lg:flex-col lg:items-center lg:gap-1.5 items-center gap-1' : 'items-center gap-1'
               }`}
             >
               <button
@@ -324,7 +326,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                 title={sidebarCollapsed ? `${activeUser.name} · ${activeTitleSub}` : undefined}
                 className={`${
                   sidebarCollapsed
-                    ? 'w-9 h-9 justify-center p-1 order-2'
+                    ? 'lg:w-9 lg:h-9 lg:justify-center lg:p-1 lg:order-2 lg:flex-none flex-1 min-w-0 justify-between gap-2 px-2 py-1.5'
                     : 'flex-1 min-w-0 justify-between gap-2 px-2 py-1.5'
                 } flex items-center rounded-md hover:bg-white/[0.06] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E53C2E]`}
               >
@@ -332,14 +334,12 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                   <span className="w-7 h-7 rounded-md bg-[#343031] border border-white/[0.14] text-white text-[11px] font-semibold flex items-center justify-center shrink-0">
                     {activeUser.initials}
                   </span>
-                  {!sidebarCollapsed && (
-                    <span className="flex flex-col text-left min-w-0 leading-tight">
+                  <span className={`flex flex-col text-left min-w-0 leading-tight ${sidebarCollapsed ? 'lg:hidden' : ''}`}>
                       <span className="text-[13px] font-medium text-white truncate">{activeUser.name}</span>
                       <span className="text-[11px] text-[#9EA1A4] truncate">{activeTitleSub}</span>
                     </span>
-                  )}
                 </span>
-                {!sidebarCollapsed && <ChevronsUpDown className="w-3.5 h-3.5 text-[#8E9195] shrink-0" />}
+                <ChevronsUpDown className={`w-3.5 h-3.5 text-[#8E9195] shrink-0 ${sidebarCollapsed ? 'lg:hidden' : ''}`} />
               </button>
 
               <button
@@ -353,7 +353,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                 title="Settings"
                 aria-current={currentRoute === '/settings' ? 'page' : undefined}
                 className={`${
-                  sidebarCollapsed ? 'w-9 h-9 order-1' : 'p-2'
+                  sidebarCollapsed ? 'lg:w-9 lg:h-9 lg:order-1 p-2' : 'p-2'
                 } inline-flex items-center justify-center rounded-md transition-colors cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E53C2E] ${
                   currentRoute === '/settings'
                     ? 'bg-white/[0.12] text-[#E53C2E] ring-1 ring-white/[0.08]'
@@ -368,7 +368,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
               <div
                 className={`absolute z-50 bg-white text-[#231F20] border border-[#E2E5E8] rounded-lg shadow-xl overflow-hidden ${
                   sidebarCollapsed
-                    ? 'left-full bottom-2 ml-2 w-72'
+                    ? 'lg:left-full lg:bottom-2 lg:ml-2 lg:right-auto bottom-full left-2.5 right-2.5 mb-2 w-72'
                     : 'bottom-full left-2.5 right-2.5 mb-2'
                 }`}
               >
@@ -438,6 +438,40 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setAskModalOpen(true);
+                  setNotificationsOpen(false);
+                  setCurrencyNoticeOpen(false);
+                  setProfileMenuOpen(false);
+                }}
+                className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-[#231F20] bg-[#F5F6F7] hover:bg-[#ECEEF0] border border-[#E2E5E8] rounded-md transition-colors whitespace-nowrap cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E53C2E]"
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-[#E53C2E]" />
+                <span className="hidden sm:inline">Ask SKYJACK</span>
+              </button>
+              {canViewRoute('/audit') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigate('/audit');
+                    setNotificationsOpen(false);
+                    setCurrencyNoticeOpen(false);
+                    setProfileMenuOpen(false);
+                  }}
+                  aria-label="Audit History"
+                  title="Audit History"
+                  aria-current={currentRoute === '/audit' ? 'page' : undefined}
+                  className={`p-1.5 border rounded-md transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E53C2E] ${
+                    currentRoute === '/audit'
+                      ? 'text-[#231F20] bg-[#ECEEF0] border-[#231F20]'
+                      : 'text-[#5F6368] hover:text-[#231F20] bg-[#F5F6F7] hover:bg-[#ECEEF0] border-[#E2E5E8]'
+                  }`}
+                >
+                  <History className="w-4 h-4" />
+                </button>
+              )}
               <div ref={currencyRef} className="relative">
                 <button
                   type="button"
@@ -612,19 +646,6 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                   </div>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setAskModalOpen(true);
-                  setNotificationsOpen(false);
-                  setCurrencyNoticeOpen(false);
-                  setProfileMenuOpen(false);
-                }}
-                className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-[#231F20] bg-[#F5F6F7] hover:bg-[#ECEEF0] border border-[#E2E5E8] rounded-md transition-colors whitespace-nowrap cursor-pointer"
-              >
-                <MessageSquare className="w-3.5 h-3.5 text-[#E53C2E]" />
-                <span className="hidden sm:inline">Ask SKYJACK</span>
-              </button>
             </div>
           </header>
 

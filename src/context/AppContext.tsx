@@ -2146,15 +2146,29 @@ export const AppProvider: React.FC<{ authenticatedUser: User; children: React.Re
   );
 
   const resetDemoState = useCallback(() => {
+    const preservedAudit = state.auditEvents;
     const fresh = costIntelligenceRepo.resetToOfficialCaseBaseline();
-    const next = { ...fresh, activeRoleId: authenticatedUser.roleId };
+    const resetEvent = buildAuditEvent(
+      activeUser,
+      'demo_state_reset',
+      'Cleared browser-local demonstration uploads, drafts, and review items. Official case records, accounts, and existing audit history were kept.',
+      undefined,
+      { reason: 'User confirmed workspace reset.' }
+    );
+    const next = {
+      ...fresh,
+      activeRoleId: authenticatedUser.roleId,
+      currency: state.currency,
+      sidebarCollapsed: state.sidebarCollapsed,
+      auditEvents: [resetEvent, ...preservedAudit].slice(0, 200),
+    };
     costIntelligenceRepo.saveState(next);
     setState(next);
     setActionBanner({
       type: 'info',
-      message: 'Workspace reset to official Appendix baseline (all uploaded batches and review items cleared).',
+      message: 'Browser-local demonstration workspace reset. Official case records and audit history were kept.',
     });
-  }, [authenticatedUser.roleId]);
+  }, [activeUser, authenticatedUser.roleId, buildAuditEvent, state.auditEvents, state.currency, state.sidebarCollapsed]);
 
   const hasPermission = useCallback(
     (action: PermissionAction) => canPerformAction(activeUser, action),
