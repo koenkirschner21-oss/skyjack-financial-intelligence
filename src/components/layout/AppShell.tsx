@@ -176,6 +176,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
     currentRoute !== '/financials' &&
     currentRoute !== '/trade' &&
     currentRoute !== '/simulator' &&
+    currentRoute !== '/investigations' &&
     currentRoute !== '/reports' &&
     currentRoute !== '/data-gateway' &&
     currentRoute !== '/approvals' &&
@@ -666,8 +667,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                       </select>
                   </label>
 
-                  {currentRoute !== '/investigations' && (
-                    <label className="inline-flex items-center gap-2 bg-[#F8F9FA] border border-[#E2E5E8] rounded-md px-2.5 py-1 text-[#5F6368] hover:border-[#C8CACD] focus-within:border-[#231F20] transition-colors">
+                  <label className="inline-flex items-center gap-2 bg-[#F8F9FA] border border-[#E2E5E8] rounded-md px-2.5 py-1 text-[#5F6368] hover:border-[#C8CACD] focus-within:border-[#231F20] transition-colors">
                       <span className="text-[11px] font-medium text-[#5F6368]">Plant</span>
                       <select
                         aria-label="Plant filter"
@@ -683,7 +683,6 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                         ))}
                       </select>
                     </label>
-                  )}
                 </div>
               )}
             </div>

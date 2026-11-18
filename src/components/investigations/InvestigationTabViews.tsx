@@ -264,29 +264,23 @@ export const InvestigationOverviewTab: React.FC<OverviewTabProps> = ({
         </div>
       </div>
 
-      {/* Recommended Human Next Steps */}
-      <div className="space-y-2 pt-3 border-t border-[#E2E5E8]">
-        <h3 className="text-xs font-semibold text-[#231F20]">Recommended Human Next Steps</h3>
-        <div className="border border-[#E2E5E8] rounded-md divide-y divide-[#E2E5E8]">
-          {recommendedSteps.map((step, i) => (
-            <div key={i} className="px-3.5 py-2.5 flex items-center justify-between gap-3">
-              <span className="text-[11px] text-[#231F20]">
-                <span className="font-mono text-[#5F6368] mr-2">0{i + 1}.</span>
-                {step.label}
-              </span>
-              {step.tab && step.actionLabel && (
-                <button
-                  type="button"
-                  onClick={() => onGoToTab(step.tab!)}
-                  className="text-[11px] font-medium text-[#E53C2E] hover:underline shrink-0 cursor-pointer"
-                >
-                  {step.actionLabel}
-                </button>
-              )}
-            </div>
-          ))}
+      {recommendedSteps[0] && (
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[#E2E5E8]">
+          <div>
+            <h3 className="text-xs font-semibold text-[#231F20]">Next Action</h3>
+            <p className="text-[11px] text-[#5F6368] mt-0.5">{recommendedSteps[0].label}</p>
+          </div>
+          {recommendedSteps[0].tab && recommendedSteps[0].actionLabel && (
+            <button
+              type="button"
+              onClick={() => onGoToTab(recommendedSteps[0].tab!)}
+              className="text-[11px] font-medium text-[#E53C2E] hover:underline cursor-pointer"
+            >
+              {recommendedSteps[0].actionLabel}
+            </button>
+          )}
         </div>
-      </div>
+      )}
 
       {/* Compact AI Brief Callout if already available */}
       {activeBrief && (
@@ -740,9 +734,7 @@ export const InvestigationActionsTab: React.FC<ActionsTabProps> = ({
   auditEvents,
   savedAiNotes,
   activeBrief,
-  aiLoading,
   aiError,
-  onAnalyzeWithAi,
   onSaveAiNote,
   onUpdateWorkflow,
   onCreateEscalation,
@@ -998,34 +990,7 @@ export const InvestigationActionsTab: React.FC<ActionsTabProps> = ({
         )}
       </div>
 
-      {/* AI Investigation Analysis & Saved AI Notes */}
-      <div className="space-y-3 pt-3 border-t border-[#E2E5E8]">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h3 className="text-xs font-semibold text-[#231F20] inline-flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-[#E53C2E]" />
-              <span>AI Investigation Analysis</span>
-            </h3>
-            <p className="text-[11px] text-[#5F6368]">
-              Advisory review brief only — AI never approves, resolves, or alters financial records.
-            </p>
-          </div>
-          <button
-            type="button"
-            disabled={aiLoading}
-            onClick={onAnalyzeWithAi}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[#231F20] rounded hover:bg-[#3A3536] disabled:opacity-50 cursor-pointer"
-          >
-            {aiLoading ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Sparkles className="w-3.5 h-3.5 text-[#E53C2E]" />
-            )}
-            <span>{aiLoading ? 'Analyzing with Gemini…' : activeBrief ? 'Refresh AI Analysis' : 'Run AI Analysis'}</span>
-          </button>
-        </div>
-
-        {aiError && (
+      {aiError && (
           <div className="p-3 bg-amber-50 border border-amber-200 rounded-md text-amber-950 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
             <div>
@@ -1113,7 +1078,6 @@ export const InvestigationActionsTab: React.FC<ActionsTabProps> = ({
             ))}
           </div>
         )}
-      </div>
 
       {/* Relevant Audit History */}
       <div className="space-y-2 pt-3 border-t border-[#E2E5E8]">
