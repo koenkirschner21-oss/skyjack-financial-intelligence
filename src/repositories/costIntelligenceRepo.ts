@@ -414,22 +414,7 @@ class LocalStorageCostRepository implements ICostIntelligenceRepository {
   }
 
   resetToOfficialCaseBaseline(): PersistedWorkspaceState {
-    const fresh = buildInitialDemoState();
-    const resetEvent: AuditEvent = {
-      id: `aud-${Date.now()}`,
-      timestampIso: new Date().toISOString(),
-      actorType: 'user',
-      actorUserId: DEMO_USERS[0].id,
-      actorName: DEMO_USERS[0].name,
-      actorRoleLabel: 'Group Controller',
-      actionType: 'demo_state_reset',
-      reason: 'User confirmed workspace reset to official case baseline.',
-      summary: 'Reset workspace uploads, review items, notifications, and saved scenarios to official baseline.',
-      provenance: 'demonstration_state',
-    };
-    const next = { ...fresh, auditEvents: [resetEvent] };
-    this.saveState(next);
-    return next;
+    return buildInitialDemoState();
   }
 }
 
