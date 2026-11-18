@@ -172,6 +172,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
 
   const showLayer2Filters =
     currentRoute !== '/overview' &&
+    currentRoute !== '/global-operations' &&
     currentRoute !== '/reports' &&
     currentRoute !== '/data-gateway' &&
     currentRoute !== '/approvals' &&

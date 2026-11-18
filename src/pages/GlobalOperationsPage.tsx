@@ -7,8 +7,6 @@ import {
   Factory,
   Globe,
   Layers,
-  Minus,
-  Plus,
   RotateCcw,
   Ship,
 } from 'lucide-react';
@@ -16,15 +14,13 @@ import { feature } from 'topojson-client';
 import type { Topology } from 'topojson-specification';
 import countriesAtlas from 'world-atlas/countries-110m.json';
 import {
-  CUSTOMS_ENTRIES,
-  IRREGULAR_COSTS,
   PLANTS,
   REGIONAL_SALES,
-  REGION_COST_TOTALS,
-  REPORTING_PERIODS,
 } from '../data/caseSeed';
 import { useApp } from '../context/AppContext';
 import { PageHeader, ProvenanceText, UnavailableDataState } from '../components/common/StateViews';
+import { canAccessRoute } from '../domain/permissions';
+import { formatInvestigationStatus } from '../repositories/costIntelligenceRepo';
 import { CustomsEntry, IrregularCost, RegionId } from '../types/domain';
 
 type MapViewMode = 'regional_sales' | 'regional_irregular' | 'customs_routes' | 'trade_exposure';
@@ -284,7 +280,6 @@ export const GlobalOperationsPage: React.FC = () => {
     hasPermission,
     navigate,
     openDrawer,
-    setQuarterFilter,
     setRegionFilter,
     setPlantFilter,
     scopedIrregularCosts,
@@ -294,7 +289,7 @@ export const GlobalOperationsPage: React.FC = () => {
   } = useApp();
 
   const [mapMode, setMapMode] = useState<MapViewMode>('regional_sales');
-  const [selectedRegion, setSelectedRegion] = useState<SalesRegionId>('north_america');
+  const [selectedRegion, setSelectedRegion] = useState<SalesRegionId | 'all'>('all');
   const [selectedCountryName, setSelectedCountryName] = useState<string | null>(null);
   const [hoveredLabel, setHoveredLabel] = useState<{
     title: string;
@@ -311,13 +306,11 @@ export const GlobalOperationsPage: React.FC = () => {
 
   // Keep local map/inspector selection synced with global Region & Plant header filters
   useEffect(() => {
-    if (
-      state.selectedRegionId !== 'all' &&
-      state.selectedRegionId !== 'corporate'
-    ) {
-      setSelectedRegion(state.selectedRegionId);
-      setSelectedCountryName(null);
+    if (state.selectedRegionId === 'all' || state.selectedRegionId === 'corporate') {
+      setSelectedRegion('all');
+      return;
     }
+    setSelectedRegion(state.selectedRegionId);
   }, [state.selectedRegionId]);
 
   useEffect(() => {
@@ -325,11 +318,6 @@ export const GlobalOperationsPage: React.FC = () => {
       setSelectedRegion('north_america');
     }
   }, [state.selectedPlantId]);
-
-  const selectedPeriod = useMemo(
-    () => REPORTING_PERIODS.find((p) => p.id === state.selectedQuarterId) ?? REPORTING_PERIODS[7],
-    [state.selectedQuarterId]
-  );
 
   // Build GeoJSON features once from world-atlas TopoJSON (excluding Antarctica for commercial scale clarity)
   const mapGeometry = useMemo(() => {
@@ -434,7 +422,6 @@ export const GlobalOperationsPage: React.FC = () => {
     >();
 
     for (const regSale of REGIONAL_SALES) {
-      const regCostTotal = REGION_COST_TOTALS.find((rc) => rc.regionId === regSale.regionId);
       const regCosts = scopedIrregularCosts.filter((c) => c.regionId === regSale.regionId);
       map.set(regSale.regionId, {
         regionName: regSale.regionName,
@@ -442,31 +429,23 @@ export const GlobalOperationsPage: React.FC = () => {
         salesCurrent: regSale.salesCurrentCad,
         salesChange: regSale.changeCad,
         salesGrowthPct: regSale.changePctReported,
-        irregularCad: regCostTotal?.amountCad ?? 0,
+        irregularCad: regCosts.reduce((sum, cost) => sum + cost.amountCad, 0),
         irregularItems: regCosts,
       });
     }
     return map;
   }, [scopedIrregularCosts]);
 
-  const corporateCostTotal = useMemo(
-    () => REGION_COST_TOTALS.find((r) => r.regionId === 'corporate')?.amountCad ?? 340_000,
-    []
-  );
   const corporateCosts = useMemo(
     () => scopedIrregularCosts.filter((c) => c.regionId === 'corporate'),
     [scopedIrregularCosts]
   );
+  const corporateVisibleCad = useMemo(
+    () => corporateCosts.reduce((sum, cost) => sum + cost.amountCad, 0),
+    [corporateCosts]
+  );
 
-  const selectedRegionData = regionStatsMap.get(selectedRegion)!;
-
-  const modeHasDataForPeriod = useMemo(() => {
-    if (mapMode === 'regional_sales') return selectedPeriod.hasRegionalSalesBreakdown;
-    if (mapMode === 'regional_irregular') return selectedPeriod.hasIrregularCostBreakdown;
-    return selectedPeriod.hasDetailedCustomsEntries;
-  }, [mapMode, selectedPeriod]);
-
-  const isPriorYearSalesPeriod = state.selectedQuarterId === 'Q3 2025';
+  const selectedRegionData = selectedRegion === 'all' ? null : regionStatsMap.get(selectedRegion) ?? null;
 
   // Color ramp helpers per mode
   const getCountryFill = (
@@ -475,14 +454,16 @@ export const GlobalOperationsPage: React.FC = () => {
     name: string
   ): string => {
     if (!regionId) return '#E7ECEF';
-    if (!modeHasDataForPeriod) return '#E9EDF0';
 
-    const isSelectedRegion = regionId === selectedRegion;
+    const isSelectedRegion = selectedRegion !== 'all' && regionId === selectedRegion;
+    const dimmed = selectedRegion !== 'all' && regionId !== selectedRegion;
     const isSelectedCountry = selectedCountryName === name;
+
+    if (dimmed && !isSelectedCountry) return '#E4E8EC';
 
     if (mapMode === 'regional_sales') {
       const reg = regionStatsMap.get(regionId);
-      const sales = isPriorYearSalesPeriod ? (reg?.salesPrior ?? 0) : (reg?.salesCurrent ?? 0);
+      const sales = reg?.salesCurrent ?? 0;
       if (isSelectedCountry) return '#E53C2E';
       if (sales >= 145_000_000) return isSelectedRegion ? '#231F20' : '#353233';
       if (sales >= 85_000_000) return isSelectedRegion ? '#45474B' : '#575B60';
@@ -534,7 +515,7 @@ export const GlobalOperationsPage: React.FC = () => {
     );
   }, [scopedCustomsEntries, selectedRegion]);
 
-  const handleSelectRegion = (rid: SalesRegionId, countryName: string | null = null) => {
+  const handleSelectRegion = (rid: SalesRegionId | 'all', countryName: string | null = null) => {
     setSelectedRegion(rid);
     setSelectedCountryName(countryName);
     setRegionFilter(rid);
@@ -544,8 +525,7 @@ export const GlobalOperationsPage: React.FC = () => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
     setSelectedCountryName(null);
-    setSelectedRegion('north_america');
-    setQuarterFilter('Q3 2026');
+    setSelectedRegion('all');
     setRegionFilter('all');
     setPlantFilter('all');
   };
@@ -555,14 +535,13 @@ export const GlobalOperationsPage: React.FC = () => {
     pan.x !== 0 ||
     pan.y !== 0 ||
     selectedCountryName !== null ||
-    state.selectedQuarterId !== 'Q3 2026' ||
-    state.selectedRegionId !== 'all' ||
+    selectedRegion !== 'all' ||
     state.selectedPlantId !== 'all';
 
   if (!allowed) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Global Operations & Commercial Footprint" />
+        <PageHeader title="Global Operations" />
         <UnavailableDataState
           title={`Global Operations restricted for ${activeUser.title}`}
           description="Role-based access controls restrict multi-region executive mapping to Group Controller, Cost Accountant, and Customs & Trade Coordinator roles."
@@ -576,18 +555,34 @@ export const GlobalOperationsPage: React.FC = () => {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Global Operations & Commercial Footprint"
+        title="Global Operations"
         actions={
-          hasNonDefaultState ? (
-            <button
-              type="button"
-              onClick={handleResetAll}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#231F20] bg-white border border-[#E2E5E8] rounded-md hover:bg-[#F5F6F7] transition-colors whitespace-nowrap cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-[#5F6368]" />
-              <span>Reset View</span>
-            </button>
-          ) : undefined
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="inline-flex items-center gap-2 bg-white border border-[#E2E5E8] rounded-md px-2.5 py-1.5 text-[#5F6368]">
+              <span className="text-[11px] font-medium">Region</span>
+              <select
+                aria-label="Region"
+                value={selectedRegion}
+                onChange={(event) => handleSelectRegion(event.target.value as SalesRegionId | 'all', null)}
+                className="bg-transparent text-xs font-semibold text-[#231F20] focus:outline-none cursor-pointer"
+              >
+                <option value="all">All Regions</option>
+                {REGIONAL_SALES.map((row) => (
+                  <option key={row.regionId} value={row.regionId}>{row.regionName}</option>
+                ))}
+              </select>
+            </label>
+            {hasNonDefaultState && (
+              <button
+                type="button"
+                onClick={handleResetAll}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-[#231F20] bg-white border border-[#E2E5E8] rounded-md hover:bg-[#F5F6F7] cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-[#5F6368]" />
+                <span>Reset</span>
+              </button>
+            )}
+          </div>
         }
       />
 
@@ -633,67 +628,7 @@ export const GlobalOperationsPage: React.FC = () => {
               })}
             </div>
 
-            <div className="flex items-center gap-1.5 text-xs shrink-0">
-              <div className="inline-flex items-center border border-[#E2E5E8] rounded-md bg-[#F8F9FA] overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setZoom((z) => Math.max(1, Number((z - 0.35).toFixed(2))))}
-                  className="px-2 py-1.5 hover:bg-white text-[#231F20] cursor-pointer transition-colors"
-                  title="Zoom out"
-                  aria-label="Zoom out"
-                >
-                  <Minus className="w-3.5 h-3.5" />
-                </button>
-                <span className="font-mono text-[11px] w-11 text-center tabular-nums text-[#231F20] border-x border-[#E2E5E8] py-1">
-                  {Math.round(zoom * 100)}%
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setZoom((z) => Math.min(3.5, Number((z + 0.35).toFixed(2))))}
-                  className="px-2 py-1.5 hover:bg-white text-[#231F20] cursor-pointer transition-colors"
-                  title="Zoom in"
-                  aria-label="Zoom in"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-              </div>
-              {(zoom !== 1 || pan.x !== 0 || pan.y !== 0) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setZoom(1);
-                    setPan({ x: 0, y: 0 });
-                  }}
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-[#E2E5E8] rounded-md hover:bg-[#F5F6F7] text-[#5F6368] text-xs cursor-pointer transition-colors"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                  <span>Reset zoom</span>
-                </button>
-              )}
-            </div>
           </div>
-
-          {/* Period Availability Notice (if current quarter lacks selected mode granularity) */}
-          {!modeHasDataForPeriod && (
-            <div className="p-4 border-b border-[#E2E5E8] bg-[#F8F9FA]">
-              <UnavailableDataState
-                title={`${
-                  mapMode === 'regional_sales'
-                    ? 'Regional Sales'
-                    : mapMode === 'regional_irregular'
-                      ? 'Regional Irregular Costs'
-                      : 'Customs Routes & Exposure'
-                } unavailable for ${state.selectedQuarterId}`}
-                description={
-                  mapMode === 'regional_sales'
-                    ? 'Appendix 1.4 reports regional sales comparisons only for Q3 2025 and Q3 2026.'
-                    : 'Detailed regional irregular costs (Appendix 2.2) and entry-level customs routes (Appendix 3.2) are supplied exclusively for Q3 2026.'
-                }
-                actionLabel="Switch to Q3 2026"
-                onAction={() => setQuarterFilter('Q3 2026')}
-              />
-            </div>
-          )}
 
           {/* Hero SVG Cartographic Canvas */}
           <div className="relative flex-1 bg-[#F6F8FA] select-none overflow-hidden min-h-[380px] flex items-center">
@@ -711,6 +646,11 @@ export const GlobalOperationsPage: React.FC = () => {
               onPointerLeave={() => {
                 setDragOrigin(null);
                 setHoveredLabel(null);
+              }}
+              onWheel={(event) => {
+                event.preventDefault();
+                const next = zoom + (event.deltaY > 0 ? -0.2 : 0.2);
+                setZoom(Math.min(3.5, Math.max(1, Number(next.toFixed(2)))));
               }}
               role="img"
               aria-label="SKYJACK global commercial and trade operations map"
@@ -735,25 +675,30 @@ export const GlobalOperationsPage: React.FC = () => {
                       key={feat.key}
                       d={feat.d}
                       fill={fill}
-                      stroke="#FFFFFF"
-                      strokeWidth={0.65 / zoom}
+                      stroke={selectedCountryName === feat.name ? '#E53C2E' : '#FFFFFF'}
+                      strokeWidth={(selectedCountryName === feat.name ? 1.8 : 0.7) / zoom}
                       className={
-                        feat.regionId ? 'cursor-pointer transition-opacity hover:opacity-85' : ''
+                        feat.regionId ? 'cursor-pointer transition-opacity hover:opacity-90' : ''
                       }
                       onMouseEnter={() => {
-                        if (!feat.regionId || !regData) return;
+                        if (!feat.regionId || !regData) {
+                          setHoveredLabel({
+                            title: feat.name,
+                            primary: 'No case records for this territory',
+                          });
+                          return;
+                        }
                         const isPartner = Boolean(COUNTRY_NAME_BY_ISO[feat.isoId]);
                         const entries = isPartner
                           ? scopedCustomsEntries.filter((e) => matchCountryToEntry(feat.name, e))
                           : [];
                         if (mapMode === 'regional_sales') {
-                          const salesVal = isPriorYearSalesPeriod
-                            ? regData.salesPrior
-                            : regData.salesCurrent;
                           setHoveredLabel({
                             title: isPartner ? `${feat.name} · ${regData.regionName}` : regData.regionName,
-                            primary: `${isPriorYearSalesPeriod ? 'Q3 2025' : 'Q3 2026'} Sales: ${formatMoney(salesVal)}`,
-                            secondary: `YoY Growth: +${regData.salesGrowthPct.toFixed(1)}% (+${formatCompactMoney(regData.salesChange)})`,
+                            primary: `${regData.regionName} Q3 2026 sales: ${formatMoney(regData.salesCurrent)}`,
+                            secondary: isPartner
+                              ? 'Country-level sales are not reported.'
+                              : `YoY +${regData.salesGrowthPct.toFixed(1)}%`,
                           });
                         } else if (mapMode === 'regional_irregular') {
                           setHoveredLabel({
@@ -780,20 +725,22 @@ export const GlobalOperationsPage: React.FC = () => {
                         }
                       }}
                       onMouseLeave={() => setHoveredLabel(null)}
-                      onClick={() => {
+                      onClick={(event) => {
+                        event.stopPropagation();
                         if (!feat.regionId) return;
-                        handleSelectRegion(
-                          feat.regionId,
-                          COUNTRY_NAME_BY_ISO[feat.isoId] ? feat.name : null
-                        );
+                        const partnerName = COUNTRY_NAME_BY_ISO[feat.isoId] ? feat.name : null;
+                        if (partnerName && selectedCountryName === partnerName) {
+                          handleSelectRegion(feat.regionId, null);
+                          return;
+                        }
+                        handleSelectRegion(feat.regionId, partnerName);
                       }}
                     />
                   );
                 })}
 
                 {/* Regional Modes: 5 Clean Commercial Region Labels (zero 9-country label scatter) */}
-                {modeHasDataForPeriod &&
-                  (mapMode === 'regional_sales' || mapMode === 'regional_irregular') &&
+                {(mapMode === 'regional_sales' || mapMode === 'regional_irregular') &&
                   mapGeometry.regionCallouts.map((rc) => {
                     if (!rc.projected) return null;
                     const regData = regionStatsMap.get(rc.regionId);
@@ -801,9 +748,7 @@ export const GlobalOperationsPage: React.FC = () => {
                     const isSel = selectedRegion === rc.regionId;
                     const metricText =
                       mapMode === 'regional_sales'
-                        ? formatCompactMoney(
-                            isPriorYearSalesPeriod ? regData.salesPrior : regData.salesCurrent
-                          )
+                        ? formatCompactMoney(regData.salesCurrent)
                         : regData.irregularCad > 0
                           ? formatCompactMoney(regData.irregularCad)
                           : formatCompactMoney(0);
@@ -843,8 +788,7 @@ export const GlobalOperationsPage: React.FC = () => {
                   })}
 
                 {/* Trade Corridor Arcs (Customs Routes: primary focus | Trade Exposure: muted context) */}
-                {modeHasDataForPeriod &&
-                  (mapMode === 'customs_routes' || mapMode === 'trade_exposure') &&
+                {(mapMode === 'customs_routes' || mapMode === 'trade_exposure') &&
                   mapGeometry.tradeArcs.map((arc) => {
                     if (arc.matchingEntries.length === 0 || !arc.arcD) return null;
                     const strokeColor = arc.hasChinaTariff
@@ -854,15 +798,18 @@ export const GlobalOperationsPage: React.FC = () => {
                         : '#231F20';
                     const isFocused = selectedCountryName === arc.partner.name;
                     const hasCountryFocus = Boolean(selectedCountryName);
+                    const outsideRegion = selectedRegion !== 'all' && arc.partner.regionId !== selectedRegion && !isFocused;
                     const isRouteHero = mapMode === 'customs_routes';
                     const baseWidth = isRouteHero ? (isFocused ? 2.8 : 1.75) : isFocused ? 2.2 : 1.05;
-                    const routeOpacity = isRouteHero
+                    const routeOpacity = outsideRegion
+                      ? 0.18
+                      : isRouteHero
                       ? hasCountryFocus && !isFocused
-                        ? 0.22
+                        ? 0.28
                         : 0.92
                       : isFocused
-                        ? 0.85
-                        : 0.28;
+                        ? 0.9
+                        : 0.35;
 
                     return (
                       <g
@@ -901,8 +848,7 @@ export const GlobalOperationsPage: React.FC = () => {
                   })}
 
                 {/* Trade Partner Nodes & Non-Overlapping Labels (Customs Routes & Trade Exposure only) */}
-                {modeHasDataForPeriod &&
-                  (mapMode === 'customs_routes' || mapMode === 'trade_exposure') &&
+                {(mapMode === 'customs_routes' || mapMode === 'trade_exposure') &&
                   mapGeometry.tradeArcs.map((arc) => {
                     if (arc.matchingEntries.length === 0 || !arc.projected) return null;
                     const strokeColor = arc.hasChinaTariff
@@ -1115,11 +1061,6 @@ export const GlobalOperationsPage: React.FC = () => {
               )}
             </div>
 
-            <p className="text-[11px] text-[#5F6368]">
-              {mapMode === 'customs_routes' || mapMode === 'trade_exposure'
-                ? 'Hover any route or trade node for duty and shipment totals; click to filter the lower inspector. Drag map to pan.'
-                : 'Select any commercial region on the map to update the regional inspector and comparison table below. Drag map to pan.'}
-            </p>
           </div>
         </div>
 
@@ -1144,7 +1085,7 @@ export const GlobalOperationsPage: React.FC = () => {
             </div>
 
             <div className="mt-2.5 text-xl font-mono font-semibold tabular-nums text-[#231F20]">
-              {formatMoney(corporateCostTotal)}
+              {corporateCosts.length > 0 ? formatMoney(corporateVisibleCad) : '—'}
             </div>
             <p className="text-[11px] text-[#5F6368] mt-0.5">
               Non-regional bucket · Excluded from map totals
@@ -1251,172 +1192,148 @@ export const GlobalOperationsPage: React.FC = () => {
         {/* Selected Region / Country Inspector */}
         <section
           aria-label="Selected Region Inspector"
-          className="xl:col-span-5 bg-white border border-[#E2E5E8] rounded-md p-5 flex flex-col justify-between gap-5"
+          className="xl:col-span-5 bg-white border border-[#E2E5E8] rounded-md p-4 flex flex-col gap-3"
         >
-          <div className="space-y-4">
-            {/* Inspector Header */}
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-1.5 text-xs text-[#5F6368]">
-                  <Compass className="w-3.5 h-3.5 text-[#E53C2E]" />
-                  <span>Selected Region</span>
-                  {selectedCountryName && (
-                    <>
-                      <span aria-hidden="true">·</span>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedCountryName(null)}
-                        className="text-[#E53C2E] font-medium hover:underline cursor-pointer"
-                      >
-                        Clear {selectedCountryName}
-                      </button>
-                    </>
-                  )}
-                </div>
-                <h2 className="text-base font-semibold text-[#231F20] mt-0.5">
-                  {selectedRegionData.regionName}
-                  {selectedCountryName ? ` · ${selectedCountryName}` : ''}
-                </h2>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex flex-wrap items-center gap-1.5 text-xs text-[#5F6368]">
+                <Compass className="w-3.5 h-3.5 text-[#E53C2E]" />
+                <span>{selectedCountryName ? 'Shipment origin' : 'Region'}</span>
+                {selectedCountryName && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCountryName(null)}
+                    className="text-[#E53C2E] font-medium hover:underline cursor-pointer"
+                  >
+                    Back to {selectedRegionData?.regionName ?? 'region'}
+                  </button>
+                )}
               </div>
-              <ProvenanceText provenance="official_case_data" sourceRef="App. 1.4, 2.2" />
+              <h2 className="text-base font-semibold text-[#231F20] mt-0.5">
+                {selectedCountryName ?? selectedRegionData?.regionName ?? 'All Regions'}
+              </h2>
             </div>
+            <ProvenanceText provenance="official_case_data" sourceRef="App. 1.4, 2.2, 3.2" />
+          </div>
 
-            {/* Clean Hairline 2x2 Summary Strip (single-level surface, no nested cards) */}
-            <div className="border border-[#E2E5E8] rounded-md grid grid-cols-2 divide-x divide-y divide-[#E2E5E8]">
-              <div className="p-3.5">
-                <div className="text-[11px] text-[#5F6368]">Q3 2026 Sales</div>
-                <div className="text-lg font-mono font-semibold tabular-nums text-[#231F20] mt-1">
-                  {formatCompactMoney(selectedRegionData.salesCurrent)}
+          {mapMode === 'regional_sales' && (
+            <div className="space-y-2">
+              <p className="text-xs text-[#5F6368]">
+                {selectedCountryName
+                  ? `${selectedRegionData?.regionName ?? 'This region'} Q3 2026 sales are regional. Country-level sales are not in the case.`
+                  : selectedRegionData
+                    ? `${selectedRegionData.regionName} contribution to Q3 2026 group sales.`
+                    : 'Q3 2026 group sales by commercial region.'}
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-md border border-[#E2E5E8] p-3">
+                  <div className="text-[11px] text-[#5F6368]">Q3 2026 sales</div>
+                  <div className="mt-1 font-mono font-semibold tabular-nums text-[#231F20]">
+                    {formatMoney(selectedRegionData?.salesCurrent ?? REGIONAL_SALES.reduce((sum, row) => sum + row.salesCurrentCad, 0))}
+                  </div>
                 </div>
-                <div className="text-[11px] font-mono text-[#5F6368] tabular-nums mt-0.5">
-                  {formatMoney(selectedRegionData.salesCurrent)}
+                <div className="rounded-md border border-[#E2E5E8] p-3">
+                  <div className="text-[11px] text-[#5F6368]">YoY change</div>
+                  <div className="mt-1 font-mono font-semibold tabular-nums text-[#16A34A]">
+                    {selectedRegionData ? `+${selectedRegionData.salesGrowthPct.toFixed(1)}%` : '+5.5%'}
+                  </div>
                 </div>
               </div>
-
-              <div className="p-3.5">
-                <div className="text-[11px] text-[#5F6368]">YoY Sales Growth</div>
-                <div className="text-lg font-mono font-semibold tabular-nums text-[#16A34A] mt-1">
-                  +{selectedRegionData.salesGrowthPct.toFixed(1)}%
-                </div>
-                <div className="text-[11px] font-mono text-[#5F6368] tabular-nums mt-0.5">
-                  +{formatCompactMoney(selectedRegionData.salesChange)} vs Q3 2025
-                </div>
-              </div>
-
-              <div className="p-3.5">
-                <div className="text-[11px] text-[#5F6368]">Q3 2025 Prior</div>
-                <div className="text-sm font-mono font-semibold tabular-nums text-[#231F20] mt-1">
-                  {formatMoney(selectedRegionData.salesPrior)}
-                </div>
-              </div>
-
-              <div className="p-3.5">
-                <div className="text-[11px] text-[#5F6368]">Q3 2026 Irregular Costs</div>
-                <div
-                  className={`text-sm font-mono font-semibold tabular-nums mt-1 ${
-                    selectedRegionData.irregularCad > 0 ? 'text-[#DC2626]' : 'text-[#5F6368]'
-                  }`}
-                >
-                  {formatMoney(selectedRegionData.irregularCad)}
-                </div>
-              </div>
+              {hasPermission('view_financials') && (
+                <button type="button" onClick={() => navigate('/financials')} className="text-xs font-medium text-[#E53C2E] hover:underline cursor-pointer">
+                  Open Financial Intelligence
+                </button>
+              )}
             </div>
+          )}
 
-            {/* Detail Section 1: Regional Irregular Costs */}
-            <div className="space-y-2 pt-1">
-              <div className="flex items-center justify-between text-xs">
-                <h3 className="font-semibold text-[#231F20]">
-                  Irregular Costs · {selectedRegionData.regionName}
-                </h3>
-                <span className="text-[11px] text-[#5F6368] tabular-nums">
-                  {selectedRegionData.irregularItems.length} visible
-                </span>
-              </div>
-
-              {selectedRegionData.irregularItems.length === 0 ? (
-                <div className="py-3 px-3.5 border border-[#E2E5E8] rounded-md text-xs text-[#5F6368]">
-                  {selectedRegionData.irregularCad === 0
-                    ? 'No irregular costs recorded for this region in Appendix 2.2.'
-                    : 'Regional irregular costs exist in Appendix 2.2 but are outside your current role scope.'}
-                </div>
+          {mapMode === 'regional_irregular' && (
+            <div className="space-y-2">
+              <p className="text-xs text-[#5F6368]">
+                {selectedRegionData
+                  ? `${formatMoney(selectedRegionData.irregularCad)} visible irregular-cost exposure in ${selectedRegionData.regionName}.`
+                  : `${formatMoney(scopedIrregularCosts.filter((cost) => cost.regionId !== 'corporate').reduce((sum, cost) => sum + cost.amountCad, 0))} visible across commercial regions.`}
+              </p>
+              {(selectedRegionData?.irregularItems ?? scopedIrregularCosts.filter((cost) => cost.regionId !== 'corporate')).length === 0 ? (
+                <p className="text-xs text-[#5F6368] border border-[#E2E5E8] rounded-md px-3 py-2">
+                  No irregular-cost records in this role and selection.
+                </p>
               ) : (
-                <div className="divide-y divide-[#F0F1F3] border border-[#E2E5E8] rounded-md">
-                  {selectedRegionData.irregularItems.map((cost) => (
+                <div className="divide-y divide-[#F0F1F3] border border-[#E2E5E8] rounded-md max-h-48 overflow-y-auto">
+                  {(selectedRegionData?.irregularItems ?? scopedIrregularCosts.filter((cost) => cost.regionId !== 'corporate')).map((cost) => (
                     <button
                       key={cost.id}
                       type="button"
                       onClick={() => openDrawer({ type: 'irregular_cost', record: cost })}
-                      className="w-full text-left px-3.5 py-2.5 hover:bg-[#F5F6F7] transition-colors flex items-center justify-between gap-3 text-xs cursor-pointer"
+                      className="w-full text-left px-3 py-2 hover:bg-[#F5F6F7] cursor-pointer text-xs"
                     >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-semibold text-[#E53C2E] shrink-0">
-                            {cost.id}
-                          </span>
-                          <span className="font-medium text-[#231F20] truncate">{cost.item}</span>
-                        </div>
-                        <div className="text-[11px] text-[#5F6368] mt-0.5">
-                          {cost.department} · {cost.timing} · {cost.walkBucket}
-                        </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono font-semibold text-[#E53C2E]">{cost.id}</span>
+                        <span className="font-mono tabular-nums">{formatMoney(cost.amountCad)}</span>
                       </div>
-                      <span className="font-mono tabular-nums font-semibold text-[#231F20] shrink-0">
-                        {formatMoney(cost.amountCad)}
-                      </span>
+                      <div className="text-[11px] text-[#5F6368] truncate">{cost.item}</div>
                     </button>
                   ))}
                 </div>
               )}
+              {canAccessRoute(activeUser, '/investigations') && (
+                <button type="button" onClick={() => navigate('/investigations')} className="text-xs font-medium text-[#E53C2E] hover:underline cursor-pointer">
+                  Open Investigations
+                </button>
+              )}
             </div>
+          )}
 
-            {/* Detail Section 2: Linked Customs Entries */}
+          {(mapMode === 'customs_routes' || mapMode === 'trade_exposure') && (
             <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <h3 className="font-semibold text-[#231F20]">
-                  {selectedCountryName
-                    ? `Customs Entries · ${selectedCountryName}`
-                    : `Trade Corridors · ${selectedRegionData.regionName}`}
-                </h3>
-                <span className="text-[11px] text-[#5F6368] tabular-nums">
-                  {(selectedCountryName ? countryEntries : regionRelatedEntries).length} entries
-                </span>
-              </div>
-
-              {(selectedCountryName ? countryEntries : regionRelatedEntries).length === 0 ? (
-                <div className="py-3 px-3.5 border border-[#E2E5E8] rounded-md text-xs text-[#5F6368]">
-                  No Appendix 3.2 customs entries recorded for this selection.
-                </div>
+              <p className="text-xs text-[#5F6368]">
+                {selectedCountryName
+                  ? `Official Q3 2026 customs entries for ${selectedCountryName}.`
+                  : 'Duties, additional tariffs, and broker fees from Appendix 3.2. Domestic tax and freight stay separate.'}
+              </p>
+              {((selectedCountryName ? countryEntries : selectedRegion === 'all' ? scopedCustomsEntries : regionRelatedEntries)).length === 0 ? (
+                <p className="text-xs text-[#5F6368] border border-[#E2E5E8] rounded-md px-3 py-2">
+                  No Appendix 3.2 customs entries for this selection.
+                </p>
               ) : (
-                <div className="divide-y divide-[#F0F1F3] border border-[#E2E5E8] rounded-md max-h-60 overflow-y-auto">
-                  {(selectedCountryName ? countryEntries : regionRelatedEntries).map((entry) => (
-                    <button
-                      key={entry.id}
-                      type="button"
-                      onClick={() => openDrawer({ type: 'customs_entry', record: entry })}
-                      className="w-full text-left px-3.5 py-2.5 hover:bg-[#F5F6F7] transition-colors flex items-center justify-between gap-3 text-xs cursor-pointer"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-semibold text-[#231F20] shrink-0">
-                            {entry.id}
-                          </span>
-                          <span className="font-medium text-[#231F20] truncate">{entry.route}</span>
+                <div className="divide-y divide-[#F0F1F3] border border-[#E2E5E8] rounded-md max-h-72 overflow-y-auto">
+                  {(selectedCountryName ? countryEntries : selectedRegion === 'all' ? scopedCustomsEntries : regionRelatedEntries).map((entry) => {
+                    const investigation = state.investigations.find((row) => row.linkedRecordId === entry.id);
+                    return (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        onClick={() => openDrawer({ type: 'customs_entry', record: entry })}
+                        className="w-full text-left px-3 py-2.5 hover:bg-[#F5F6F7] cursor-pointer text-xs space-y-1"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono font-semibold text-[#231F20]">{entry.id}</span>
+                          <span className="font-mono tabular-nums">{formatMoney(entry.goodsValueCad)}</span>
                         </div>
-                        <div className="text-[11px] text-[#5F6368] mt-0.5 truncate">
-                          {entry.goods} · {entry.rateDescription}
+                        <div className="text-[11px] text-[#5F6368]">
+                          {entry.originCountry} to {entry.destination} · {entry.goods}
                         </div>
-                      </div>
-                      <div className="text-right font-mono tabular-nums shrink-0">
-                        <div className="text-[#231F20] font-semibold">
-                          {formatMoney(entry.totalDutyAndTariffCad + entry.brokerFeeChargedCad)}
+                        <div className="text-[11px] font-mono tabular-nums text-[#231F20]">
+                          Duty {formatMoney(entry.mfnDutyCad)} · Additional tariff {formatMoney(entry.additionalTariffCad)}
                         </div>
-                        <div className="text-[10px] text-[#5F6368]">duty &amp; broker</div>
-                      </div>
-                    </button>
-                  ))}
+                        <div className="text-[11px] font-mono tabular-nums text-[#5F6368]">
+                          Broker {formatMoney(entry.brokerFeeChargedCad)} · Variance {formatMoney(entry.brokerVarianceReportedCad, { showSign: true })}
+                        </div>
+                        <div className="text-[11px] text-[#5F6368]">
+                          {investigation ? formatInvestigationStatus(investigation.status) : 'No investigation record'}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
+              {hasPermission('view_trade') && (
+                <button type="button" onClick={() => navigate('/trade')} className="text-xs font-medium text-[#E53C2E] hover:underline cursor-pointer">
+                  Open Shipments & Trade
+                </button>
+              )}
             </div>
-          </div>
+          )}
         </section>
 
         {/* Regional Comparison Table */}
@@ -1430,7 +1347,7 @@ export const GlobalOperationsPage: React.FC = () => {
                 Regional Sales &amp; Irregular Cost Comparison
               </h2>
               <p className="text-xs text-[#5F6368] mt-0.5">
-                Q3 2025 vs. Q3 2026 commercial sales ({formatCompactMoney(329_700_000)}) reconciled with Q3 irregular costs ({formatCompactMoney(2_818_000)}).
+                Q3 2026 regional sales. Irregular costs are the records visible to this role.
               </p>
             </div>
             <ProvenanceText provenance="official_case_data" sourceRef="App. 1.4, 2.2" />
@@ -1456,7 +1373,7 @@ export const GlobalOperationsPage: React.FC = () => {
                   const regCountries = CASE_COUNTRY_MARKERS.filter(
                     (c) => c.regionId === rid
                   ).map((c) => c.name);
-                  const regEntryCount = CUSTOMS_ENTRIES.filter((e) =>
+                  const regEntryCount = scopedCustomsEntries.filter((e) =>
                     regCountries.some((cn) => matchCountryToEntry(cn, e))
                   ).length;
 
@@ -1465,7 +1382,7 @@ export const GlobalOperationsPage: React.FC = () => {
                       key={rid}
                       onClick={() => handleSelectRegion(rid, null)}
                       className={`cursor-pointer transition-colors ${
-                        isSel ? 'bg-[#F5F6F7]' : 'hover:bg-[#F8F9FA]'
+                        isSel ? 'bg-[#F5F6F7] shadow-[inset_3px_0_0_#E53C2E]' : 'hover:bg-[#F8F9FA]'
                       }`}
                     >
                       <td
@@ -1511,7 +1428,7 @@ export const GlobalOperationsPage: React.FC = () => {
                   <td className="py-3 px-4 text-right font-mono">—</td>
                   <td className="py-3 px-4 text-right font-mono">—</td>
                   <td className="py-3 px-4 text-right font-mono font-medium text-[#DC2626]">
-                    {formatMoney(corporateCostTotal)}
+                    {corporateCosts.length > 0 ? formatMoney(corporateVisibleCad) : '—'}
                   </td>
                   <td className="py-3 px-4 text-right font-mono">0</td>
                 </tr>
@@ -1524,9 +1441,9 @@ export const GlobalOperationsPage: React.FC = () => {
                   <td className="py-3 px-4 text-right font-mono text-[#16A34A]">{formatMoney(17_100_000, { showSign: true })}</td>
                   <td className="py-3 px-4 text-right font-mono text-[#16A34A]">+5.5%</td>
                   <td className="py-3 px-4 text-right font-mono text-[#DC2626]">
-                    {formatMoney(IRREGULAR_COSTS.reduce((s, c) => s + c.amountCad, 0))}
+                    {formatMoney(scopedIrregularCosts.reduce((sum, cost) => sum + cost.amountCad, 0))}
                   </td>
-                  <td className="py-3 px-4 text-right font-mono">12</td>
+                  <td className="py-3 px-4 text-right font-mono">{scopedCustomsEntries.length}</td>
                 </tr>
               </tfoot>
             </table>
