@@ -432,18 +432,6 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => setAskModalOpen(true)}
-                className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-[#231F20] bg-[#F5F6F7] hover:bg-[#ECEEF0] border border-[#E2E5E8] rounded-md transition-colors whitespace-nowrap cursor-pointer"
-              >
-                <MessageSquare className="w-3.5 h-3.5 text-[#E53C2E]" />
-                <span>Ask SKYJACK</span>
-              </button>
-
-              <span className="hidden sm:inline text-[11px] text-[#5F6368] tabular-nums" title="Fixed reference assumption, not a live FX rate">
-                Reference FX: 1 CAD = {DEMO_CAD_TO_USD_RATE.toFixed(2)} USD
-              </span>
               <div ref={currencyRef} className="relative">
                 <button
                   type="button"
@@ -488,7 +476,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                       ))}
                     </div>
                     <p className="text-[11px] text-[#5F6368] leading-relaxed">
-                      Fixed reference assumption, not a live FX rate.
+                      Fixed reference rate for display conversion.
                     </p>
                     <div className="pt-1.5 border-t border-[#E2E5E8] flex items-center justify-between text-[11px] text-[#5F6368] tabular-nums">
                       <span>Reference FX rate</span>
@@ -618,6 +606,19 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                   </div>
                 )}
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setAskModalOpen(true);
+                  setNotificationsOpen(false);
+                  setCurrencyNoticeOpen(false);
+                  setProfileMenuOpen(false);
+                }}
+                className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-[#231F20] bg-[#F5F6F7] hover:bg-[#ECEEF0] border border-[#E2E5E8] rounded-md transition-colors whitespace-nowrap cursor-pointer"
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-[#E53C2E]" />
+                <span className="hidden sm:inline">Ask SKYJACK</span>
+              </button>
             </div>
           </header>
 

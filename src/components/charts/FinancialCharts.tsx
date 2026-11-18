@@ -492,35 +492,37 @@ export const RegionalSalesDonut: React.FC<{
 
 export const ChinaTariffScenarioChart: React.FC = () => {
   const { formatMoney, formatCompactMoney } = useApp();
-  const scenarios = [
-    { rate: '0%', amountCad: 0, baseline: false },
-    { rate: '15%', amountCad: 315_000, baseline: false },
-    { rate: '25%', amountCad: 525_000, baseline: true },
-    { rate: '35%', amountCad: 735_000, baseline: false },
+  const recordedCad = 525_000;
+  const hypotheticalCad = 315_000;
+  const differenceCad = 210_000;
+  const rows = [
+    { label: 'Recorded 25%', amountCad: recordedCad, color: '#E53C2E' },
+    { label: 'Hypothetical 15%', amountCad: hypotheticalCad, color: '#231F20' },
   ];
-  const max = 735_000;
   return (
-    <div className="space-y-2">
-      {scenarios.map((scenario) => (
-        <div key={scenario.rate} className="grid grid-cols-[42px_minmax(0,1fr)_88px] items-center gap-2 text-xs">
-          <span className={`font-mono ${scenario.baseline ? 'font-semibold text-[#E53C2E]' : 'text-[#5F6368]'}`}>
-            {scenario.rate}
-          </span>
-          <div className="h-3 rounded bg-[#F0F1F3] overflow-hidden" title={`${scenario.rate} additional China tariff ${formatMoney(scenario.amountCad)}`}>
-            <div
-              className="h-full rounded"
-              style={{
-                width: `${Math.max(scenario.amountCad === 0 ? 1.5 : 0, (scenario.amountCad / max) * 100)}%`,
-                backgroundColor: scenario.baseline ? '#E53C2E' : '#231F20',
-              }}
-            />
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        {rows.map((row) => (
+          <div key={row.label} className="rounded-md border border-[#E2E5E8] p-2.5">
+            <div className="text-[11px] text-[#5F6368]">{row.label}</div>
+            <div className="mt-1 text-lg font-semibold tabular-nums text-[#231F20]">{formatCompactMoney(row.amountCad)}</div>
+            <div className="mt-2 h-2 rounded bg-[#F0F1F3] overflow-hidden">
+              <div
+                className="h-full rounded"
+                style={{ width: `${(row.amountCad / recordedCad) * 100}%`, backgroundColor: row.color }}
+              />
+            </div>
+            <div className="mt-1 text-[11px] font-mono tabular-nums text-[#5F6368]">{formatMoney(row.amountCad)}</div>
           </div>
-          <span className="text-right font-mono tabular-nums text-[#231F20]">{formatCompactMoney(scenario.amountCad)}</span>
-        </div>
-      ))}
-      <p className="text-[11px] text-[#5F6368] leading-relaxed">
-        Baseline 25% is {formatMoney(525_000)}. A 15% rate would lower additional China tariffs by {formatMoney(210_000)} on the CAD 2,100,000 China goods base. These bars are scenarios, not total trade cost or realized profit.
-      </p>
+        ))}
+      </div>
+      <div className="rounded-md border border-[#E2E5E8] bg-[#F5F6F7] px-3 py-2">
+        <div className="text-[11px] text-[#5F6368]">Hypothetical quarterly reduction, 25% to 15%</div>
+        <div className="text-lg font-semibold tabular-nums text-[#231F20]">{formatCompactMoney(differenceCad)}</div>
+        <p className="text-[11px] text-[#5F6368] leading-relaxed">
+          {formatMoney(differenceCad)} less additional China tariff. Hypothetical tariff-cost reduction, not realized savings, profit, or total trade cost.
+        </p>
+      </div>
     </div>
   );
 };

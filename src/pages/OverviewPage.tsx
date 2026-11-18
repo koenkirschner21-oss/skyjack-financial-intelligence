@@ -1,9 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import {
+  AlertCircle,
   ArrowRight,
-  ChevronDown,
-  ChevronUp,
-  ClipboardCheck,
+  CheckCircle2,
   Compass,
   FileCheck2,
   Globe2,
@@ -28,6 +27,7 @@ import {
   OPPORTUNITY_CATEGORY_META,
 } from '../domain/opportunityEngine';
 import { computeQuarterEndReadiness } from '../domain/readinessEngine';
+import { canAccessRoute } from '../domain/permissions';
 import {
   EightQuarterPerformanceChart,
   RegionalSalesDonut,
@@ -35,7 +35,6 @@ import {
   TradeCostTrendChart,
 } from '../components/charts/FinancialCharts';
 import { PageHeader, UnavailableDataState } from '../components/common/StateViews';
-import { QuarterEndReadinessPanel } from '../components/intelligence/QuarterEndReadinessPanel';
 import { buildNeedsAttentionQueue } from '../components/overview/overviewViewModels';
 
 const SEVERITY_BADGE: Record<'high' | 'medium' | 'info', string> = {
@@ -66,7 +65,6 @@ export const OverviewPage: React.FC = () => {
 
   // Default 8-quarter trend metric to Operating Earnings
   const [chartMode, setChartMode] = useState<'sales' | 'operating_earnings' | 'margin'>('operating_earnings');
-  const [showReadinessDetail, setShowReadinessDetail] = useState(false);
 
   const canOpenFinancials = hasPermission('view_financials');
   const canOpenTrade = hasPermission('view_trade');
@@ -977,117 +975,6 @@ export const OverviewPage: React.FC = () => {
         aria-label="Quarter-End Readiness and Cost Opportunities"
         className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch"
       >
-        {/* Card A: Quarter-End Readiness (compact summary + progressive disclosure) */}
-        <div className="order-3 lg:col-span-2 bg-white border border-[#E2E5E8] rounded-md p-5 flex flex-col justify-between">
-          <div>
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <h2 className="text-sm font-semibold text-[#231F20]">
-                Close Readiness ({readiness.quarterId})
-              </h2>
-              <span className="px-2 py-0.5 text-[11px] font-medium rounded border text-amber-800 bg-amber-50 border-amber-300">
-                {readiness.totalBlockingCount === 0
-                  ? 'No tracked blockers'
-                  : `${readiness.totalBlockingCount} open items`}
-              </span>
-            </div>
-            <p className="text-xs text-[#5F6368] mt-1">
-              Open investigations, approvals, quarantined imports, and missing evidence. This checklist is not a recorded quarter-end sign-off.
-            </p>
-
-            <div className="grid grid-cols-2 gap-2.5 mt-4">
-              <button
-                type="button"
-                onClick={() => navigate(isContributor ? '/data-gateway' : '/investigations')}
-                className="text-left p-3 bg-[#F5F6F7]/70 hover:bg-[#F5F6F7] border border-[#E2E5E8] rounded-md transition-colors cursor-pointer"
-              >
-                <div className="text-[11px] text-[#5F6368]">Unresolved investigations</div>
-                <div className="mt-1 flex items-baseline justify-between">
-                  <span className="text-lg font-semibold font-mono tabular-nums text-[#231F20]">
-                    {invIndicator?.unresolvedCount ?? 0}
-                  </span>
-                  <span className="text-[11px] text-[#5F6368] tabular-nums">
-                    of {invIndicator?.totalCount ?? 0} open
-                  </span>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => navigate('/approvals')}
-                className="text-left p-3 bg-[#F5F6F7]/70 hover:bg-[#F5F6F7] border border-[#E2E5E8] rounded-md transition-colors cursor-pointer"
-              >
-                <div className="text-[11px] text-[#5F6368]">Pending Approvals</div>
-                <div className="mt-1 flex items-baseline justify-between">
-                  <span className="text-lg font-semibold font-mono tabular-nums text-[#231F20]">
-                    {aprIndicator?.unresolvedCount ?? 0}
-                  </span>
-                  <span className="text-[11px] text-[#5F6368] tabular-nums">
-                    awaiting sign-off
-                  </span>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => navigate('/data-gateway')}
-                className="text-left p-3 bg-[#F5F6F7]/70 hover:bg-[#F5F6F7] border border-[#E2E5E8] rounded-md transition-colors cursor-pointer"
-              >
-                <div className="text-[11px] text-[#5F6368]">Quarantined Imports</div>
-                <div className="mt-1 flex items-baseline justify-between">
-                  <span className="text-lg font-semibold font-mono tabular-nums text-[#231F20]">
-                    {quarIndicator?.unresolvedCount ?? 0}
-                  </span>
-                  <span className="text-[11px] text-[#5F6368]">held out of totals</span>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => navigate(isContributor ? '/data-gateway' : '/investigations')}
-                className="text-left p-3 bg-[#F5F6F7]/70 hover:bg-[#F5F6F7] border border-[#E2E5E8] rounded-md transition-colors cursor-pointer"
-              >
-                <div className="text-[11px] text-[#5F6368]">Missing Evidence</div>
-                <div className="mt-1 flex items-baseline justify-between">
-                  <span className="text-lg font-semibold font-mono tabular-nums text-[#231F20]">
-                    {evIndicator?.unresolvedCount ?? 0}
-                  </span>
-                  <span className="text-[11px] text-[#5F6368]">pending verification</span>
-                </div>
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-4 pt-3 border-t border-[#F0F1F3] flex flex-wrap items-center justify-between gap-2 text-xs">
-            <button
-              type="button"
-              onClick={() => setShowReadinessDetail((v) => !v)}
-              aria-expanded={showReadinessDetail}
-              className="inline-flex items-center gap-1.5 font-medium text-[#231F20] hover:text-[#E53C2E] transition-colors cursor-pointer"
-            >
-              <span>{showReadinessDetail ? 'Hide detailed indicators & AI briefing' : 'Inspect 6 close indicators & AI briefing'}</span>
-              {showReadinessDetail ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            </button>
-
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => navigate('/approvals')}
-                className="font-medium text-[#5F6368] hover:text-[#231F20] cursor-pointer"
-              >
-                Approvals
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate(isContributor ? '/data-gateway' : '/investigations')}
-                className="inline-flex items-center gap-1 font-medium text-[#E53C2E] hover:underline cursor-pointer"
-              >
-                <span>{isContributor ? 'Data Gateway' : 'Investigations'}</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
-
         {/* Card B: Cost Opportunities (or Scoped Governance Actions for Contributor) */}
         {canOpenOpportunities ? (
           <div className="order-1 bg-white border border-[#E2E5E8] rounded-md p-5 flex flex-col justify-between">
@@ -1299,81 +1186,130 @@ export const OverviewPage: React.FC = () => {
 
       </section>
 
-      {/* Progressive Disclosure: Full 6-Indicator Readiness Panel + AI Briefing */}
-      {showReadinessDetail && (
-        <QuarterEndReadinessPanel />
-      )}
-
-      {/* ================================================================== */}
-      {/* LAYER 4 — SUPPORTING ANALYTICS (2 Compact Cards Only)              */}
-      {/* ================================================================== */}
-      {!isContributor && (
-        <section
-          aria-label="Supporting Regional and Trade Analytics"
-          className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch"
-        >
-          {/* Card B: Trade Intelligence Summary (no 12-row customs or domestic tables) */}
-          <div className="lg:col-span-2 bg-white border border-[#E2E5E8] rounded-md p-5 flex flex-col justify-between">
-            <div>
-              <div className="flex flex-wrap items-start justify-between gap-2 mb-3.5">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <Ship className="w-4 h-4 text-[#E53C2E]" />
-                    <h2 className="text-sm font-semibold text-[#231F20]">Additional China Tariffs</h2>
-                  </div>
-                  <p className="text-xs text-[#5F6368] mt-0.5">
-                    {isExactTradePeriod
-                      ? 'Q3 2026 case scenarios on the CAD 2,100,000 China goods base. Not total trade cost.'
-                      : `The tariff comparison belongs to Q3 2026 and is not a ${state.selectedQuarterId} result.`}
-                  </p>
-                </div>
-              </div>
-              {isExactTradePeriod ? (
+      <section
+        aria-label="Close readiness and China tariff exposure"
+        className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch"
+      >
+        <div className="bg-white border border-[#E2E5E8] rounded-md p-4 flex flex-col">
+          <h2 className="text-sm font-semibold text-[#231F20]">Close Readiness ({readiness.quarterId})</h2>
+          <p className="text-xs text-[#5F6368] mt-1">
+            Open work from existing records. This checklist is not a quarter-end approval.
+          </p>
+          <ul className="mt-3 divide-y divide-[#F0F1F3]">
+            {([
+              {
+                label: 'Unresolved investigations',
+                count: invIndicator?.unresolvedCount ?? 0,
+                detail: `${invIndicator?.unresolvedCount ?? 0} open of ${invIndicator?.totalCount ?? 0}`,
+                route: canAccessRoute(activeUser, '/investigations')
+                  ? '/investigations'
+                  : canAccessRoute(activeUser, '/data-gateway')
+                    ? '/data-gateway'
+                    : null,
+              },
+              {
+                label: 'Pending approvals',
+                count: aprIndicator?.unresolvedCount ?? 0,
+                detail: `${aprIndicator?.unresolvedCount ?? 0} open of ${aprIndicator?.totalCount ?? 0}`,
+                route: canAccessRoute(activeUser, '/approvals') ? '/approvals' : null,
+              },
+              {
+                label: 'Missing supporting evidence',
+                count: evIndicator?.unresolvedCount ?? 0,
+                detail: `${evIndicator?.unresolvedCount ?? 0} missing or pending verification`,
+                route: canAccessRoute(activeUser, '/investigations')
+                  ? '/investigations'
+                  : canAccessRoute(activeUser, '/data-gateway')
+                    ? '/data-gateway'
+                    : null,
+              },
+              {
+                label: 'Data validation / quarantined imports',
+                count: quarIndicator?.unresolvedCount ?? 0,
+                detail: `${quarIndicator?.unresolvedCount ?? 0} held out of trusted totals`,
+                route: canAccessRoute(activeUser, '/data-gateway') ? '/data-gateway' : null,
+              },
+            ] as const).map((item) => {
+              const clear = item.count === 0;
+              const route = item.route;
+              const body = (
                 <>
-                  {state.selectedRegionId !== 'all' && (
-                    <p className="text-[11px] text-[#5F6368] mb-2">Group-wide case scenario. China tariffs are not split by region.</p>
+                  {clear ? (
+                    <CheckCircle2 className="w-4 h-4 text-[#16A34A] shrink-0" aria-hidden="true" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-[#E53C2E] shrink-0" aria-hidden="true" />
                   )}
-                  <ChinaTariffScenarioChart />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-xs font-medium text-[#231F20]">{item.label}</span>
+                    <span className="block text-[11px] text-[#5F6368]">{item.detail}</span>
+                  </span>
+                  <span className="text-sm font-semibold font-mono tabular-nums text-[#231F20]">{item.count}</span>
                 </>
-              ) : (
+              );
+              return (
+                <li key={item.label}>
+                  {route ? (
+                    <button
+                      type="button"
+                      onClick={() => navigate(route)}
+                      className="w-full flex items-center gap-2.5 py-2 text-left hover:bg-[#F8F9FA] cursor-pointer"
+                    >
+                      {body}
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2.5 py-2">{body}</div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+
+        <div className="bg-white border border-[#E2E5E8] rounded-md p-4 flex flex-col">
+          <div className="flex items-center gap-2">
+            <Ship className="w-4 h-4 text-[#E53C2E]" />
+            <h2 className="text-sm font-semibold text-[#231F20]">China Tariff Exposure</h2>
+          </div>
+          {canOpenTrade || canRunSimulator ? (
+            isExactTradePeriod ? (
+              <>
+                <p className="text-xs text-[#5F6368] mt-1">
+                  Q3 2026 additional China tariffs on the CAD 2,100,000 goods base.
+                  {state.selectedRegionId !== 'all' ? ' Group-wide case scenario, not split by region.' : ''}
+                </p>
+                <div className="mt-3">
+                  <ChinaTariffScenarioChart />
+                </div>
+                {canRunSimulator && (
+                  <div className="mt-3 pt-3 border-t border-[#F0F1F3] flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => navigate('/simulator')}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-[#E53C2E] hover:underline cursor-pointer"
+                    >
+                      <span>Tariff Simulator</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="mt-3">
                 <UnavailableDataState
-                  title="Tariff scenarios are the Q3 2026 case"
-                  description="These rates are not historical observations for the selected period."
+                  title="Tariff comparison is the Q3 2026 case"
+                  description={`These rates are not a ${state.selectedQuarterId} result.`}
                   actionLabel="Switch to Q3 2026"
                   onAction={() => setQuarterFilter('Q3 2026')}
                 />
-              )}
-            </div>
-
-            <div className="mt-4 pt-3 border-t border-[#F0F1F3] flex flex-wrap items-center justify-between gap-2 text-xs">
-              <span className="text-[#5F6368]">
-                Interprovincial {formatCompactMoney(7_300_000)} freight &amp; sales tax separated
-              </span>
-              <div className="flex items-center gap-3">
-                {canRunSimulator && (
-                  <button
-                    type="button"
-                    onClick={() => navigate('/simulator')}
-                    className="font-medium text-[#231F20] hover:text-[#E53C2E] cursor-pointer whitespace-nowrap"
-                  >
-                    Tariff Simulator
-                  </button>
-                )}
-                {canOpenTrade && (
-                  <button
-                    type="button"
-                    onClick={() => navigate('/trade')}
-                    className="inline-flex items-center gap-1 font-medium text-[#E53C2E] hover:underline cursor-pointer whitespace-nowrap"
-                  >
-                    <span>Open Shipments &amp; Trade</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                )}
               </div>
-            </div>
-          </div>
-        </section>
-      )}
+            )
+          ) : (
+            <p className="text-xs text-[#5F6368] mt-3">
+              China tariff scenarios are outside this role. No Q3 2026 tariff amounts are shown.
+            </p>
+          )}
+        </div>
+      </section>
     </div>
   );
 };
