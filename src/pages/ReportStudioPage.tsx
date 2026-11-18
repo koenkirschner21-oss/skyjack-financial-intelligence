@@ -612,7 +612,7 @@ export const ReportStudioPage: React.FC = () => {
             </nav>
 
             {/* Step 2 & 3: Balanced ~35% Report Editor (Left) / ~65% Live Preview & Export (Right) */}
-            <div className="grid grid-cols-1 gap-4 items-start">
+            <div className="grid grid-cols-1 gap-4 items-start min-w-0">
               {wizardStep < 3 && (
               <aside
                 aria-label="Report Editor"
@@ -628,7 +628,7 @@ export const ReportStudioPage: React.FC = () => {
                     className="w-full px-4 py-3 flex items-center justify-between gap-2 text-left hover:bg-[#F8F9FA] cursor-pointer"
                     aria-expanded={wizardStep === 1}
                   >
-                    <div>
+                    <div className="min-w-0">
                       <div className="text-xs font-semibold text-[#231F20]">1. Report Setup</div>
                       <div className="text-[11px] text-[#5F6368] truncate">
                         {config.reportingPeriod}
@@ -899,7 +899,7 @@ export const ReportStudioPage: React.FC = () => {
                     className="w-full px-4 py-3 flex items-center justify-between gap-2 text-left hover:bg-[#F8F9FA] cursor-pointer"
                     aria-expanded={wizardStep === 2}
                   >
-                    <div>
+                    <div className="min-w-0">
                       <div className="text-xs font-semibold text-[#231F20]">
                         2. Report Contents ({reportModel.slides.length} slides)
                       </div>
@@ -924,7 +924,7 @@ export const ReportStudioPage: React.FC = () => {
                           className="w-full px-3 py-2 flex items-center justify-between gap-2 text-left bg-[#F8F9FA] hover:bg-[#F0F1F3] rounded-t-md cursor-pointer"
                           aria-expanded={showKpiPicker}
                         >
-                          <span className="text-[11px] font-semibold text-[#231F20]">
+                          <span className="min-w-0 text-[11px] font-semibold text-[#231F20]">
                             Summary Slide Metrics ({reportModel.selectedKpis.length} of{' '}
                             {reportModel.availableKpiOptions.length})
                           </span>
