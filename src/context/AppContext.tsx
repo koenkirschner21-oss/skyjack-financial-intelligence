@@ -139,7 +139,6 @@ interface AppContextValue {
   navigate: (route: RoutePath) => void;
   state: PersistedWorkspaceState;
   activeUser: User;
-  switchRole: (roleId: UserRoleId) => void;
   setQuarterFilter: (quarterId: QuarterId) => void;
   setRegionFilter: (regionId: RegionId) => void;
   setPlantFilter: (plantId: string) => void;
@@ -270,7 +269,10 @@ interface AppContextValue {
 
 const AppContext = createContext<AppContextValue | null>(null);
 
-export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const AppProvider: React.FC<{ authenticatedUser: User; children: React.ReactNode }> = ({
+  authenticatedUser,
+  children,
+}) => {
   const [state, setState] = useState<PersistedWorkspaceState>(() => costIntelligenceRepo.loadState());
   const [currentRoute, setCurrentRoute] = useState<RoutePath>(() => {
     const initial = normalizeRoute(window.location.pathname);
@@ -304,10 +306,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, []);
 
-  const activeUser = useMemo(
-    () => DEMO_USERS.find((u) => u.roleId === state.activeRoleId) ?? DEMO_USERS[0],
-    [state.activeRoleId]
-  );
+  const activeUser = authenticatedUser;
+
+  useEffect(() => {
+    setState((prev) => {
+      if (prev.activeRoleId === authenticatedUser.roleId) return prev;
+      const next = { ...prev, activeRoleId: authenticatedUser.roleId };
+      costIntelligenceRepo.saveState(next);
+      return next;
+    });
+  }, [authenticatedUser]);
 
   const navigate = useCallback((route: RoutePath) => {
     if (window.location.pathname !== route) {
@@ -350,30 +358,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       provenance: 'demonstration_state',
     }),
     []
-  );
-
-  const switchRole = useCallback(
-    (roleId: UserRoleId) => {
-      const nextUser = DEMO_USERS.find((u) => u.roleId === roleId) ?? DEMO_USERS[0];
-      const cleanTitle = nextUser.title.replace(/\s*\(Demo\)$/i, '');
-      persistState((prev) => ({
-        ...prev,
-        activeRoleId: roleId,
-        auditEvents: [
-          buildAuditEvent(
-            nextUser,
-            'role_switched',
-            `Switched active account to ${nextUser.name} (${cleanTitle}).`
-          ),
-          ...prev.auditEvents,
-        ].slice(0, 200),
-      }));
-      setActionBanner({
-        type: 'info',
-        message: `Active account switched to ${nextUser.name} — ${cleanTitle}.`,
-      });
-    },
-    [buildAuditEvent, persistState]
   );
 
   const setQuarterFilter = useCallback(
@@ -2219,12 +2203,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const resetDemoState = useCallback(() => {
     const fresh = costIntelligenceRepo.resetToOfficialCaseBaseline();
-    setState(fresh);
+    const next = { ...fresh, activeRoleId: authenticatedUser.roleId };
+    costIntelligenceRepo.saveState(next);
+    setState(next);
     setActionBanner({
       type: 'info',
       message: 'Workspace reset to official Appendix baseline (all uploaded batches and review items cleared).',
     });
-  }, []);
+  }, [authenticatedUser.roleId]);
 
   const hasPermission = useCallback(
     (action: PermissionAction) => canPerformAction(activeUser, action),
@@ -2241,7 +2227,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     navigate,
     state,
     activeUser,
-    switchRole,
     setQuarterFilter,
     setRegionFilter,
     setPlantFilter,
