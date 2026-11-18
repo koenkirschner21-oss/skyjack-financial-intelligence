@@ -92,26 +92,30 @@ function addBrandHeaderAndFooter(
 
   // Slide Title & Subtitle
   slide.addText(s.title, {
-    x: 0.55,
-    y: 0.22,
-    w: 10.6,
-    h: 0.42,
+    x: 0.5,
+    y: 0.18,
+    w: 10.5,
+    h: 0.38,
     fontFace: 'Arial',
-    fontSize: 20,
+    fontSize: 18,
     bold: true,
     color: COLORS.charcoal,
     margin: 0,
+    wrap: true,
+    shrinkText: true,
   });
 
   slide.addText(`${s.subtitle}   |   ${s.provenanceTag}`, {
-    x: 0.55,
-    y: 0.64,
-    w: 12.2,
+    x: 0.5,
+    y: 0.56,
+    w: 12.3,
     h: 0.28,
     fontFace: 'Arial',
-    fontSize: 9.5,
+    fontSize: 10,
     color: COLORS.secondaryText,
     margin: 0,
+    wrap: true,
+    shrinkText: true,
   });
 
   // Hairline divider
@@ -140,9 +144,11 @@ function addBrandHeaderAndFooter(
       w: 10.8,
       h: 0.26,
       fontFace: 'Arial',
-      fontSize: 8.5,
+      fontSize: 9,
       color: COLORS.grey,
       margin: 0,
+      wrap: true,
+      shrinkText: true,
     }
   );
 
@@ -277,9 +283,9 @@ function addWaterfallShapes(
 
     slide.addText(formatReportingCompact(step.deltaCad, currency, { showSign: !step.isEndpoint }), {
       x: plotLeft + colW * idx,
-      y: Math.max(box.y + 0.34, barTopY - 0.24),
+      y: Math.min(box.y + box.h - 0.62, Math.max(box.y + 0.4, barTopY - 0.22)),
       w: colW,
-      h: 0.22,
+      h: 0.2,
       fontFace: 'Arial',
       fontSize: 7.5,
       bold: true,
@@ -310,7 +316,8 @@ function addStyledTable(
   numericCols: number[],
   box: { x: number; y: number; w: number; h: number }
 ): void {
-  const maxRows = 13;
+  const rowH = 0.28;
+  const maxRows = Math.max(1, Math.floor(box.h / rowH) - 1);
   const visibleRows = rows.slice(0, maxRows);
   const numSet = new Set(numericCols);
 
@@ -347,8 +354,9 @@ function addStyledTable(
     y: box.y,
     w: box.w,
     border: { type: 'solid', color: COLORS.border, pt: 0.5 },
+    h: box.h,
     autoPage: false,
-    rowH: visibleRows.length > 9 ? 0.3 : 0.36,
+    rowH,
     margin: [0.04, 0.06, 0.04, 0.06],
   });
 }
@@ -364,7 +372,8 @@ export interface PptxExportResult {
 export async function generatePptxPresentation(model: BuiltReportModel): Promise<PptxExportResult> {
   const PptxCtor = resolvePptxConstructor();
   const pptx = new PptxCtor();
-  pptx.layout = 'LAYOUT_16x9';
+  pptx.defineLayout({ name: 'SKYJACK_WIDE', width: 13.333, height: 7.5 });
+  pptx.layout = 'SKYJACK_WIDE';
   pptx.author = model.config.authorName;
   pptx.company = 'SKYJACK (Prompt to Pitch 2026 — Team Group 12)';
   pptx.title = model.config.title;
@@ -433,20 +442,24 @@ export async function generatePptxPresentation(model: BuiltReportModel): Promise
         w: 11.2,
         h: 1.15,
         fontFace: 'Arial',
-        fontSize: 32,
+        fontSize: 30,
         bold: true,
         color: COLORS.charcoal,
         valign: 'top',
+        wrap: true,
+        shrinkText: true,
       });
 
       slide.addText(s.subtitle, {
         x: 1.0,
         y: 3.25,
         w: 10.8,
-        h: 0.55,
+        h: 0.6,
         fontFace: 'Arial',
         fontSize: 14,
         color: COLORS.secondaryText,
+        wrap: true,
+        shrinkText: true,
       });
 
       // Metadata card
@@ -461,16 +474,18 @@ export async function generatePptxPresentation(model: BuiltReportModel): Promise
 
       if (s.bullets?.length) {
         slide.addText(
-          s.bullets.map((b) => ({ text: b, options: { bullet: true, breakLine: true } })),
+          s.bullets.slice(0, 5).map((b) => ({ text: b, options: { bullet: true, breakLine: true } })),
           {
             x: 1.25,
             y: 4.32,
             w: 10.8,
             h: 1.6,
             fontFace: 'Arial',
-            fontSize: 11.5,
+            fontSize: 12,
             color: COLORS.charcoal,
-            paraSpaceAfter: 6,
+            paraSpaceAfter: 4,
+            shrinkText: true,
+            wrap: true,
           }
         );
       }
@@ -561,31 +576,39 @@ export async function generatePptxPresentation(model: BuiltReportModel): Promise
         });
         slide.addText(kpi.compactValue, {
           x: x + 0.18,
-          y: y + 0.52,
+          y: y + 0.5,
           w: cardW - 0.36,
-          h: 0.58,
+          h: 0.5,
           fontFace: 'Arial',
-          fontSize: 26,
+          fontSize: 22,
           bold: true,
           color: COLORS.charcoal,
+          shrinkText: true,
+          wrap: false,
+          margin: 0,
         });
         slide.addText(`Exact: ${kpi.exactValue}`, {
           x: x + 0.18,
-          y: y + 1.15,
+          y: y + 1.05,
           w: cardW - 0.36,
-          h: 0.28,
+          h: 0.26,
           fontFace: 'Arial',
-          fontSize: 9.5,
+          fontSize: 10,
           color: COLORS.charcoal,
+          shrinkText: true,
+          margin: 0,
         });
         slide.addText(`${kpi.subtext} · ${kpi.provenance}`, {
           x: x + 0.18,
-          y: y + 1.46,
+          y: y + 1.34,
           w: cardW - 0.36,
-          h: 0.32,
+          h: 0.42,
           fontFace: 'Arial',
-          fontSize: 8.5,
+          fontSize: 9,
           color: COLORS.grey,
+          shrinkText: true,
+          wrap: true,
+          margin: 0,
         });
       });
 
@@ -613,8 +636,8 @@ export async function generatePptxPresentation(model: BuiltReportModel): Promise
 
     // Content slides with Chart + Table, Waterfall Shapes + Table, Table-only, or Bullets
     if (s.chart && s.table) {
-      const chartBox = { x: 0.55, y: 1.15, w: 6.25, h: 4.85 };
-      const tableBox = { x: 7.0, y: 1.15, w: 5.78, h: 4.85 };
+      const chartBox = { x: 0.5, y: 1.08, w: 6.15, h: 4.95 };
+      const tableBox = { x: 6.8, y: 1.08, w: 6.0, h: 4.95 };
 
       if (s.chart.kind === 'waterfall' && s.chart.waterfallSteps?.length) {
         addWaterfallShapes(pptx, slide, s.chart, chartBox, model.currency);
@@ -684,11 +707,12 @@ export async function generatePptxPresentation(model: BuiltReportModel): Promise
         tableTop = 2.22;
       }
 
+      const tableBottom = s.calloutNote ? 6.15 : 6.9;
       addStyledTable(slide, s.table.headers, s.table.rows, s.table.numericColumnIndices, {
-        x: 0.55,
+        x: 0.5,
         y: tableTop,
-        w: 12.23,
-        h: 4.35,
+        w: 12.33,
+        h: Math.max(1.2, tableBottom - tableTop),
       });
 
       if (s.calloutNote) {
@@ -730,9 +754,11 @@ export async function generatePptxPresentation(model: BuiltReportModel): Promise
           w: 11.63,
           h: 4.45,
           fontFace: 'Arial',
-          fontSize: 11.5,
+          fontSize: 13,
           color: COLORS.charcoal,
-          paraSpaceAfter: 9,
+          paraSpaceAfter: 6,
+          shrinkText: true,
+          wrap: true,
         }
       );
 
