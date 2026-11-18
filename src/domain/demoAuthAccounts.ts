@@ -2,9 +2,8 @@ import { DEMO_USERS } from '../data/caseSeed';
 import type { User, UserRoleId } from '../types/domain';
 
 /**
- * The three competition demonstration identities.
+ * Competition demonstration identities.
  * The shared password is never stored here. Provisioning reads DEMO_ACCOUNT_PASSWORD.
- * Operational Contributor stays in the permission model for regression checks and has no login.
  */
 export const DEMO_AUTH_ACCOUNTS = [
   {
@@ -27,6 +26,13 @@ export const DEMO_AUTH_ACCOUNTS = [
     displayName: 'Marco Silva',
     jobTitle: 'Customs & Trade Coordinator',
     department: 'Global Trade',
+  },
+  {
+    email: 'alex.chen@skyjack.com',
+    roleId: 'operational_contributor' as const,
+    displayName: 'Alex Chen',
+    jobTitle: 'Plant Operations Coordinator',
+    department: 'Operations & Logistics',
   },
 ] as const;
 

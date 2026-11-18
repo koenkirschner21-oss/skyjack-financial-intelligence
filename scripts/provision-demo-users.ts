@@ -1,5 +1,5 @@
 /**
- * Idempotent admin setup for the three fictional demonstration accounts.
+ * Idempotent admin setup for the fictional demonstration accounts.
  *
  * Required environment (never commit these values):
  *   SUPABASE_URL
@@ -98,7 +98,7 @@ async function main(): Promise<void> {
     }
   }
 
-  console.log('Three demonstration accounts are provisioned. Public sign-up must remain disabled in the Supabase dashboard.');
+  console.log('Demonstration accounts are provisioned. Public sign-up must remain disabled in the Supabase dashboard.');
 }
 
 main().catch((error: unknown) => {

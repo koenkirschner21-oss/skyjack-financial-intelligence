@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { DEMO_USERS } from '../data/caseSeed';
-import { canAccessRoute, canPerformAction } from './permissions';
+import { DEMO_USERS, IRREGULAR_COSTS } from '../data/caseSeed';
+import { canAccessRoute, canPerformAction, filterIrregularCostsForUser } from './permissions';
+import type { PermissionAction } from '../types/domain';
 import { DEMO_AUTH_ACCOUNTS, userFromAssignedRole } from './demoAuthAccounts';
 import {
   authorizeRequest,
@@ -30,7 +31,7 @@ function mockSignIn(email: string, password: string): { ok: true; roleId: string
 
 async function resolveRole(
   roleId: string,
-  options?: { claimedRoleId?: string; requiredAction?: 'view_financials' | 'view_overview' }
+  options?: { claimedRoleId?: string; requiredAction?: PermissionAction }
 ): Promise<AuthorizeRequestResult> {
   return authorizeRequest({
     authConfigured: true,
@@ -47,7 +48,7 @@ export function runAuthAccessChecks(): AuthAccessCheck[] {
   const now = 1_700_000_000;
   const signIns = DEMO_AUTH_ACCOUNTS.map((account) => mockSignIn(account.email, ACCEPTED_PASSWORD));
   checks.push({
-    label: 'Valid login for the three demonstration accounts',
+    label: 'Valid login for the four demonstration accounts',
     live: false,
     passed: signIns.every((result, index) => {
       if (!result.ok) return false;
@@ -129,8 +130,56 @@ export async function runAuthAccessChecksAsync(): Promise<AuthAccessCheck[]> {
       canAccessRoute(marco, '/trade') &&
       canAccessRoute(marco, '/opportunities') &&
       !canAccessRoute(contributor, '/opportunities') &&
-      canPerformAction(contributor, 'view_overview'),
-    detail: 'controller and accountant: financials; trade: trade and opportunities, not financials; contributor has no opportunity route',
+      !canAccessRoute(contributor, '/financials') &&
+      !canAccessRoute(contributor, '/trade') &&
+      canAccessRoute(contributor, '/overview') &&
+      canAccessRoute(contributor, '/data-gateway') &&
+      canPerformAction(contributor, 'view_overview') &&
+      canPerformAction(contributor, 'stage_data_upload') &&
+      canPerformAction(contributor, 'submit_correction_request') &&
+      !canPerformAction(contributor, 'view_financials') &&
+      !canPerformAction(contributor, 'view_trade') &&
+      !canPerformAction(contributor, 'view_opportunities'),
+    detail: 'controller and accountant: financials; trade: trade and opportunities, not financials; contributor keeps overview and data gateway only',
+  });
+
+  const contributorRecords = filterIrregularCostsForUser(contributor, IRREGULAR_COSTS);
+  checks.push({
+    label: 'Operational Contributor still sees authorized operational records',
+    live: false,
+    passed:
+      contributorRecords.some((item) => item.id === 'IR-01') &&
+      contributorRecords.every(
+        (item) =>
+          item.regionId === 'north_america' &&
+          (item.department === 'Operations' || item.department === 'Logistics')
+      ),
+    detail: contributorRecords.map((item) => item.id).join(', '),
+  });
+
+  const contributorFinancials = await resolveRole('operational_contributor', { requiredAction: 'view_financials' });
+  const contributorTrade = await resolveRole('operational_contributor', { requiredAction: 'view_trade' });
+  const contributorOpportunities = await resolveRole('operational_contributor', { requiredAction: 'view_opportunities' });
+  const contributorOverview = await resolveRole('operational_contributor', { requiredAction: 'stage_data_upload' });
+  const contributorImpersonation = await resolveRole('operational_contributor', {
+    claimedRoleId: 'controller',
+    requiredAction: 'view_financials',
+  });
+  checks.push({
+    label: 'Operational Contributor server authorization keeps financial, trade, and opportunity actions restricted',
+    live: false,
+    passed:
+      !contributorFinancials.ok &&
+      contributorFinancials.status === 403 &&
+      !contributorTrade.ok &&
+      contributorTrade.status === 403 &&
+      !contributorOpportunities.ok &&
+      contributorOpportunities.status === 403 &&
+      contributorOverview.ok &&
+      contributorOverview.user.roleId === 'operational_contributor' &&
+      !contributorImpersonation.ok &&
+      contributorImpersonation.status === 403,
+    detail: contributorOverview.ok ? contributorOverview.user.roleId : 'overview denied',
   });
 
   const tradeFinancials = await resolveRole('trade_coordinator', { requiredAction: 'view_financials' });
