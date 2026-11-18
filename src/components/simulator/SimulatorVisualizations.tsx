@@ -145,19 +145,22 @@ export const TariffSensitivityChart: React.FC<TariffSensitivityChartProps> = ({
   return (
     <div className="space-y-2.5">
       <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#5F6368]">
-        <span>
-          Modeled Quarterly Additional Tariff vs. Rate (Scale: 0%–{chartMaxRate}%)
-        </span>
         <span className="font-mono tabular-nums text-[#231F20]">
-          {hoverRatePct !== null && hoverStats ? (
-            <>
-              Hover <strong className="text-[#E53C2E]">{hoverRatePct}%</strong>:{' '}
-              <strong>{formatMoney(hoverStats.hypotheticalAdditionalTariffCad)}</strong>/qtr (
-              {formatMoney(hoverStats.quarterlyTariffDifferenceCad, { showSign: true })})
-            </>
-          ) : (
-            <>Click any preset marker or drag slider to inspect rates</>
-          )}
+          Baseline {baselineEffectiveRatePct.toFixed(0)}% · {formatMoney(currentAdditionalTariffCad)}
+          <span className="mx-1.5 text-[#D1D5DB]">·</span>
+          Selected {hypotheticalRatePct}% · {formatMoney(hypotheticalAdditionalTariffCad)}
+        </span>
+        <span className={`font-mono tabular-nums font-semibold ${
+          hypotheticalAdditionalTariffCad > currentAdditionalTariffCad
+            ? 'text-[#DC2626]'
+            : hypotheticalAdditionalTariffCad < currentAdditionalTariffCad
+              ? 'text-[#16A34A]'
+              : 'text-[#5F6368]'
+        }`}>
+          {hypotheticalAdditionalTariffCad === currentAdditionalTariffCad
+            ? 'No change'
+            : `${formatMoney(hypotheticalAdditionalTariffCad - currentAdditionalTariffCad, { showSign: true })} vs baseline`}
+          {hoverRatePct !== null && hoverStats ? ` · Hover ${hoverRatePct}%` : ''}
         </span>
       </div>
 

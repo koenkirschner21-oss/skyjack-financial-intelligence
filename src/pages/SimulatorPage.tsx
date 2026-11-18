@@ -1,12 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertCircle,
   ArrowDownUp,
   BookmarkPlus,
   ChevronDown,
   ChevronRight,
   FileSpreadsheet,
-  Info,
   RotateCcw,
   SlidersHorizontal,
   Trash2,
@@ -92,7 +90,6 @@ export const SimulatorPage: React.FC = () => {
     activeUser,
     hasPermission,
     navigate,
-    setQuarterFilter,
     scopedCustomsEntries,
     simulatorPresetEntryIds,
     saveScenario,
@@ -147,7 +144,6 @@ export const SimulatorPage: React.FC = () => {
   const [showAdvancedAssumptions, setShowAdvancedAssumptions] = useState<boolean>(false);
   const [showDetailedComparison, setShowDetailedComparison] = useState<boolean>(false);
   const [showAssumptionsPanel, setShowAssumptionsPanel] = useState<boolean>(false);
-  const assumptionsPanelRef = useRef<HTMLDivElement | null>(null);
 
   // Per-shipment table sort
   const [sortField, setSortField] = useState<BreakdownSortField>('goodsValueCad');
@@ -206,23 +202,30 @@ export const SimulatorPage: React.FC = () => {
     }
   }, [simulatorPresetEntryIds, scopedCustomsEntries]);
 
-  const uniqueOrigins = useMemo(
-    () => Array.from(new Set(scopedCustomsEntries.map((e) => e.originCountry))).sort(),
+  const applicableEntries = useMemo(
+    () => scopedCustomsEntries.filter((entry) => entry.originCountry === 'China' && entry.additionalTariffPct > 0),
     [scopedCustomsEntries]
   );
 
-  const uniqueGoods = useMemo(
-    () => Array.from(new Set(scopedCustomsEntries.map((e) => e.goods))).sort(),
-    [scopedCustomsEntries]
-  );
+  useEffect(() => {
+    if (goodsFilter !== 'all' && goodsFilter !== 'Electric motors' && goodsFilter !== 'Control modules') {
+      setGoodsFilter('all');
+    }
+  }, [goodsFilter]);
+
+  useEffect(() => {
+    setSelectedEntryIds((prev) => {
+      const allowedIds = new Set(applicableEntries.map((entry) => entry.id));
+      const next = prev.filter((id) => allowedIds.has(id));
+      if (next.length === prev.length) return prev;
+      if (next.length === 0) return applicableEntries.map((entry) => entry.id);
+      return next;
+    });
+  }, [applicableEntries]);
 
   const visibleCandidateEntries = useMemo(() => {
-    return scopedCustomsEntries.filter((e) => {
-      if (originFilter !== 'all' && e.originCountry !== originFilter) return false;
-      if (goodsFilter !== 'all' && e.goods !== goodsFilter) return false;
-      return true;
-    });
-  }, [scopedCustomsEntries, originFilter, goodsFilter]);
+    return applicableEntries.filter((entry) => goodsFilter === 'all' || entry.goods === goodsFilter);
+  }, [applicableEntries, goodsFilter]);
 
   const selectedEntries = useMemo(
     () => scopedCustomsEntries.filter((e) => selectedEntryIds.includes(e.id)),
@@ -273,16 +276,6 @@ export const SimulatorPage: React.FC = () => {
     return rows;
   }, [simulation.perEntryBreakdown, sortField, sortDir]);
 
-  const maxAbsRowDelta = useMemo(
-    () =>
-      Math.max(
-        1,
-        ...simulation.perEntryBreakdown.map((r) => Math.abs(r.quarterlyDeltaCad)),
-        ...simulation.perEntryBreakdown.map((r) => r.goodsValueCad)
-      ),
-    [simulation.perEntryBreakdown]
-  );
-
   const toggleSort = (field: BreakdownSortField) => {
     if (sortField === field) {
       setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
@@ -311,7 +304,7 @@ export const SimulatorPage: React.FC = () => {
     setGoodsFilter('all');
     setSelectedEntryIds(BASELINE_ENTRY_IDS);
     setScenarioQuarterId('Q3 2026');
-    setHypotheticalRatePct(15);
+    setHypotheticalRatePct(25);
     setAnnualizationQuarters(4);
     setTransitionCostCad(0);
     setRecurringAltSupplierDeltaCad(0);
@@ -391,11 +384,14 @@ export const SimulatorPage: React.FC = () => {
     });
   };
 
-  const openAssumptionsPanel = () => {
-    setShowAssumptionsPanel(true);
-    setTimeout(() => {
-      assumptionsPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }, 60);
+  const applyGoodsScope = (nextGoods: string) => {
+    setOriginFilter('China');
+    setGoodsFilter(nextGoods);
+    setSelectedEntryIds(
+      applicableEntries
+        .filter((entry) => nextGoods === 'all' || entry.goods === nextGoods)
+        .map((entry) => entry.id)
+    );
   };
 
   if (!allowed) {
@@ -415,10 +411,10 @@ export const SimulatorPage: React.FC = () => {
   const diff = simulation.quarterlyTariffDifferenceCad;
   const diffLabel =
     diff < 0
-      ? 'Potential Cost Reduction'
+      ? 'Potential cost reduction'
       : diff > 0
-        ? 'Additional Cost Exposure'
-        : 'No Cost Change';
+        ? 'Cost increase'
+        : 'No change';
   const diffColor =
     diff < 0 ? 'text-[#16A34A]' : diff > 0 ? 'text-[#DC2626]' : 'text-[#5F6368]';
 
@@ -436,14 +432,6 @@ export const SimulatorPage: React.FC = () => {
         title="Tariff Simulator"
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={openAssumptionsPanel}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#5F6368] bg-white border border-[#E2E5E8] rounded hover:text-[#231F20] hover:bg-[#F5F6F7] transition-colors cursor-pointer"
-            >
-              <Info className="w-3.5 h-3.5" />
-              <span>Assumptions &amp; Sources</span>
-            </button>
             <button
               type="button"
               onClick={handleResetBaseline}
@@ -466,6 +454,16 @@ export const SimulatorPage: React.FC = () => {
         }
       />
 
+      <div className="flex justify-end">
+        <div
+          className="inline-flex items-center gap-2 bg-white border border-[#E2E5E8] rounded-md px-2.5 py-1.5 text-[#5F6368]"
+          aria-label="Reporting period Q3 2026"
+        >
+          <span className="text-[11px] font-medium">Period</span>
+          <span className="text-xs font-semibold text-[#231F20]">Q3 2026</span>
+        </div>
+      </div>
+
       {/* THREE-PART INTERACTIVE WORKBENCH */}
       <div className="grid grid-cols-1 lg:grid-cols-12 xl:grid-cols-[minmax(0,29fr)_minmax(0,45fr)_minmax(0,26fr)] gap-4 items-start">
         {/* LEFT (~29%): SCENARIO CONTROLS */}
@@ -480,85 +478,25 @@ export const SimulatorPage: React.FC = () => {
             </span>
           </div>
 
-          {state.selectedQuarterId !== 'Q3 2026' && (
-            <div className="px-2.5 py-1.5 bg-[#F8F9FA] border border-[#E2E5E8] rounded flex items-center justify-between gap-2 text-[11px] text-[#5F6368]">
-              <span>Customs entries use Q3 2026 (App. 3.2).</span>
-              <button
-                type="button"
-                onClick={() => setQuarterFilter('Q3 2026')}
-                className="font-medium text-[#E53C2E] hover:underline shrink-0 cursor-pointer"
-              >
-                Switch to Q3 2026
-              </button>
-            </div>
-          )}
-
-          {/* Origin & Goods Category */}
-          <div className="grid grid-cols-2 gap-2.5 text-xs">
-            <label className="space-y-1">
-              <span className="text-[11px] font-medium text-[#5F6368] block">Origin Country</span>
-              <select
-                value={originFilter}
-                onChange={(e) => setOriginFilter(e.target.value)}
-                className="w-full px-2 py-1.5 border border-[#E2E5E8] rounded bg-white text-[#231F20] text-xs"
-              >
-                <option value="all">All Origins</option>
-                {uniqueOrigins.map((o) => (
-                  <option key={o} value={o}>
-                    {o}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="space-y-1">
-              <span className="text-[11px] font-medium text-[#5F6368] block">Goods Category</span>
-              <select
-                value={goodsFilter}
-                onChange={(e) => setGoodsFilter(e.target.value)}
-                className="w-full px-2 py-1.5 border border-[#E2E5E8] rounded bg-white text-[#231F20] text-xs"
-              >
-                <option value="all">All Goods</option>
-                {uniqueGoods.map((g) => (
-                  <option key={g} value={g}>
-                    {g}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+          <label className="block space-y-1 text-xs">
+            <span className="text-[11px] font-medium text-[#5F6368]">Applicable goods</span>
+            <select
+              aria-label="Applicable goods"
+              value={goodsFilter === 'Electric motors' || goodsFilter === 'Control modules' ? goodsFilter : 'all'}
+              onChange={(event) => applyGoodsScope(event.target.value)}
+              className="w-full px-2 py-1.5 border border-[#E2E5E8] rounded bg-white text-[#231F20] text-xs"
+            >
+              <option value="all">All Applicable Goods</option>
+              <option value="Electric motors">Electric motors</option>
+              <option value="Control modules">Control modules</option>
+            </select>
+          </label>
 
           {/* Shipment Entry Selection */}
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px]">
               <span className="font-medium text-[#5F6368]">Selected Shipments</span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOriginFilter('China');
-                    setGoodsFilter('all');
-                    setSelectedEntryIds(BASELINE_ENTRY_IDS);
-                  }}
-                  className="px-2 py-0.5 bg-[#F5F6F7] border border-[#E2E5E8] rounded font-medium text-[#231F20] hover:bg-[#ECEEF0] cursor-pointer"
-                >
-                  China (E-04–E-06)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedEntryIds(visibleCandidateEntries.map((e) => e.id))}
-                  className="px-2 py-0.5 bg-[#F5F6F7] border border-[#E2E5E8] rounded font-medium text-[#231F20] hover:bg-[#ECEEF0] cursor-pointer"
-                >
-                  All ({visibleCandidateEntries.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedEntryIds([])}
-                  className="px-2 py-0.5 bg-white border border-[#E2E5E8] rounded text-[#5F6368] hover:bg-[#F5F6F7] cursor-pointer"
-                >
-                  Clear
-                </button>
-              </div>
+              <span className="text-[11px] text-[#5F6368]">China entries with an additional tariff</span>
             </div>
 
             <div className="border border-[#E2E5E8] rounded divide-y divide-[#E2E5E8] max-h-44 overflow-y-auto">
@@ -750,7 +688,7 @@ export const SimulatorPage: React.FC = () => {
                   </label>
                 </div>
                 <div className="text-[10px] text-[#5F6368] pt-1 border-t border-[#F0F1F3]">
-                  Entry Base: {scenarioQuarterId} (Appendix 3.2) · Constant shipment volume assumed.
+                  Optional what-if costs. They are not Appendix 3.4 figures. Zero leaves the tariff calculation unchanged.
                 </div>
               </div>
             )}
@@ -761,15 +699,12 @@ export const SimulatorPage: React.FC = () => {
         <section className="lg:col-span-7 xl:col-span-1 bg-white border border-[#E2E5E8] rounded-md p-4 sm:p-5 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h2 className="text-sm font-semibold text-[#231F20]">
-                Tariff Cost Sensitivity Curve
-              </h2>
+              <h2 className="text-sm font-semibold text-[#231F20]">China Tariff Sensitivity</h2>
               <p className="text-[11px] text-[#5F6368]">
-                Selected Goods Base:{' '}
+                Applicable goods{' '}
                 <span className="font-mono font-semibold text-[#231F20]">
                   {formatMoney(simulation.dutiableGoodsValueCad)}
-                </span>{' '}
-                ({simulation.selectedCount} {simulation.selectedCount === 1 ? 'entry' : 'entries'})
+                </span>
               </p>
             </div>
             <ProvenanceText provenance="hypothetical_scenario" sourceRef="App. 3.4" />
@@ -833,10 +768,10 @@ export const SimulatorPage: React.FC = () => {
               </div>
               <div className="text-[10px] text-[#5F6368] leading-snug">
                 {diff < 0
-                  ? 'External policy scenario; not guaranteed realized savings.'
+                  ? 'Hypothetical lower tariff cost. Not realized savings or cash recovery.'
                   : diff > 0
-                    ? 'Incremental quarterly tariff cost vs. baseline.'
-                    : 'Matches current quarterly additional tariff.'}
+                    ? 'Higher modeled tariff cost versus the 25% case baseline.'
+                    : 'Matches the case baseline additional tariff.'}
               </div>
             </div>
 
@@ -883,18 +818,10 @@ export const SimulatorPage: React.FC = () => {
         <div className="px-4 sm:px-5 py-3 border-b border-[#E2E5E8] flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-sm font-semibold text-[#231F20]">
-              Per-Shipment Sensitivity Breakdown ({simulation.perEntryBreakdown.length} Selected)
+              Per-shipment sensitivity ({simulation.perEntryBreakdown.length})
             </h2>
-            {!baselineRateSummary.isUniform && selectedEntries.length > 0 && (
-              <p className="text-[11px] text-[#5F6368] mt-0.5">
-                Uniform hypothetical rate ({hypotheticalRatePct}%) applied across mixed baseline entries (
-                {baselineRateSummary.uniqueRates.join('%, ')}%).
-              </p>
-            )}
           </div>
-          <span className="text-[11px] text-[#5F6368]">
-            Click any shipment row to inspect full border record
-          </span>
+          <span className="text-[11px] text-[#5F6368]">Select a row to open the customs record</span>
         </div>
 
         {sortedBreakdown.length === 0 ? (
@@ -923,7 +850,7 @@ export const SimulatorPage: React.FC = () => {
                       onClick={() => toggleSort('goodsValueCad')}
                       className="inline-flex items-center gap-1 hover:text-[#231F20] cursor-pointer"
                     >
-                      <span>Goods Value</span>
+                      <span>Customs value</span>
                       <ArrowDownUp className="w-3 h-3" />
                     </button>
                   </th>
@@ -943,7 +870,7 @@ export const SimulatorPage: React.FC = () => {
                       onClick={() => toggleSort('currentAdditionalTariffCad')}
                       className="inline-flex items-center gap-1 hover:text-[#231F20] cursor-pointer"
                     >
-                      <span>Curr Addl.</span>
+                      <span>Baseline tariff</span>
                       <ArrowDownUp className="w-3 h-3" />
                     </button>
                   </th>
@@ -953,7 +880,7 @@ export const SimulatorPage: React.FC = () => {
                       onClick={() => toggleSort('hypotheticalAdditionalTariffCad')}
                       className="inline-flex items-center gap-1 hover:text-[#231F20] cursor-pointer"
                     >
-                      <span>Hypo ({hypotheticalRatePct}%)</span>
+                      <span>Scenario tariff</span>
                       <ArrowDownUp className="w-3 h-3" />
                     </button>
                   </th>
@@ -963,24 +890,15 @@ export const SimulatorPage: React.FC = () => {
                       onClick={() => toggleSort('quarterlyDeltaCad')}
                       className="inline-flex items-center gap-1 hover:text-[#231F20] cursor-pointer"
                     >
-                      <span>Quarterly Delta</span>
+                      <span>Difference</span>
                       <ArrowDownUp className="w-3 h-3" />
                     </button>
                   </th>
-                  <th className="py-2.5 px-4 text-left font-medium w-36">Base Share</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E2E5E8] tabular-nums">
                 {sortedBreakdown.map((row) => {
                   const entryObj = scopedCustomsEntries.find((e) => e.id === row.entryId)!;
-                  const baseSharePct =
-                    simulation.dutiableGoodsValueCad > 0
-                      ? (row.goodsValueCad / simulation.dutiableGoodsValueCad) * 100
-                      : 0;
-                  const deltaBarPct =
-                    maxAbsRowDelta > 0
-                      ? (Math.abs(row.quarterlyDeltaCad) / maxAbsRowDelta) * 100
-                      : 0;
 
                   return (
                     <tr
@@ -1020,27 +938,6 @@ export const SimulatorPage: React.FC = () => {
                           ? formatMoney(0)
                           : formatMoney(row.quarterlyDeltaCad, { showSign: true })}
                       </td>
-                      <td className="py-2.5 px-4">
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 h-1.5 bg-[#ECEEF0] rounded overflow-hidden">
-                            <div
-                              className="h-full rounded"
-                              style={{
-                                width: `${Math.min(100, Math.max(4, deltaBarPct || baseSharePct))}%`,
-                                backgroundColor:
-                                  row.quarterlyDeltaCad < 0
-                                    ? '#16A34A'
-                                    : row.quarterlyDeltaCad > 0
-                                      ? '#E53C2E'
-                                      : '#7E8082',
-                              }}
-                            />
-                          </div>
-                          <span className="text-[11px] font-mono text-[#5F6368] w-10 text-right">
-                            {baseSharePct.toFixed(1)}%
-                          </span>
-                        </div>
-                      </td>
                     </tr>
                   );
                 })}
@@ -1058,10 +955,36 @@ export const SimulatorPage: React.FC = () => {
               Scenario Comparison &amp; Saved Snapshots
             </h2>
             <p className="text-xs text-[#5F6368]">
-              Save modeled snapshots, compare side by side, and export selected scenarios to Executive Reports.
+              Baseline versus the selected rate. Saved snapshots stay hypothetical.
             </p>
           </div>
           <ProvenanceText provenance="hypothetical_scenario" sourceRef="App. 3.4" />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+          <div className="border border-[#E2E5E8] rounded-md p-3">
+            <div className="text-[11px] text-[#5F6368]">Case baseline</div>
+            <div className="mt-1 font-semibold tabular-nums text-[#231F20]">
+              {baselineRateSummary.weightedPct.toFixed(0)}% · {formatMoney(simulation.currentAdditionalTariffCad)}
+            </div>
+          </div>
+          <div className="border border-[#E2E5E8] rounded-md p-3">
+            <div className="text-[11px] text-[#5F6368]">Selected scenario</div>
+            <div className="mt-1 font-semibold tabular-nums text-[#231F20]">
+              {hypotheticalRatePct}% · {formatMoney(simulation.hypotheticalAdditionalTariffCad)}
+            </div>
+          </div>
+          <div className="border border-[#E2E5E8] rounded-md p-3">
+            <div className="text-[11px] text-[#5F6368]">{diffLabel}</div>
+            <div className={`mt-1 font-semibold tabular-nums ${diffColor}`}>
+              {diff === 0 ? formatMoney(0) : formatMoney(diff, { showSign: true })}
+              {simulation.currentAdditionalTariffCad > 0 && (
+                <span className="ml-1 text-[11px]">
+                  ({((diff / simulation.currentAdditionalTariffCad) * 100).toFixed(1)}%)
+                </span>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Inline Save Form */}
@@ -1237,11 +1160,7 @@ export const SimulatorPage: React.FC = () => {
             ) : (
               <ChevronRight className="w-3.5 h-3.5" />
             )}
-            <span>
-              {showDetailedComparison
-                ? 'Hide Detailed Matrix & Appendix 3.4 Benchmarks'
-                : 'Show Detailed Matrix & Appendix 3.4 Benchmarks'}
-            </span>
+            <span>{showDetailedComparison ? 'Hide Detailed Analysis' : 'Detailed Analysis'}</span>
           </button>
 
           {showDetailedComparison && (
@@ -1383,26 +1302,16 @@ export const SimulatorPage: React.FC = () => {
       </section>
 
       {/* EXPANDABLE MODEL ASSUMPTIONS & SOURCES */}
-      <section
-        ref={assumptionsPanelRef}
-        className="bg-[#F8F9FA] border border-[#E2E5E8] rounded-md overflow-hidden"
-      >
+      <section className="text-xs text-[#5F6368]">
+        <p>Scenario estimates use Q3 2026 case shipments. Changes are hypothetical, not realized savings.</p>
         <button
           type="button"
           onClick={() => setShowAssumptionsPanel((prev) => !prev)}
-          className="w-full px-4 py-3 flex items-center justify-between gap-2 text-left text-xs font-semibold text-[#231F20] hover:bg-[#F0F1F3] transition-colors cursor-pointer"
+          className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-[#231F20] hover:text-[#E53C2E] cursor-pointer"
         >
-          <span className="inline-flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-[#E53C2E] shrink-0" />
-            <span>Model Assumptions, Provenance &amp; Non-Guaranteed Savings Disclosure</span>
-          </span>
-          {showAssumptionsPanel ? (
-            <ChevronDown className="w-4 h-4 text-[#5F6368]" />
-          ) : (
-            <ChevronRight className="w-4 h-4 text-[#5F6368]" />
-          )}
+          {showAssumptionsPanel ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+          Methodology and sources
         </button>
-
         {showAssumptionsPanel && (
           <div className="px-4 pb-4 pt-1 border-t border-[#E2E5E8] grid grid-cols-1 md:grid-cols-2 gap-4 text-[11px] text-[#5F6368] leading-relaxed">
             <div className="space-y-1.5">
