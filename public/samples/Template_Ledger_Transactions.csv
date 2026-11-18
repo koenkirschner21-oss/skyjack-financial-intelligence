@@ -1,0 +1,2 @@
+transaction_id,posting_date,accounting_period,region,plant,department,gl_account,expense_category,description,amount_cad,supplier_id,invoice_reference,approval_reference,prepared_by,supporting_reference
+TX-SAMPLE-001,2026-09-15,Q3 2026,North America,Plant 1,Operations,GL 5110,Direct Materials,Replace with valid transaction description (CAD numeric without currency symbols),12500.00,SUP-100,INV-2026-001,APR-2026-001,Preparer Name,PO-10001

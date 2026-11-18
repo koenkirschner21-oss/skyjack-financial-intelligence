@@ -1,0 +1,2 @@
+entry_id,shipment_date,accounting_period,origin_country,destination,goods_description,hs_code,goods_value_cad,base_duty_rate,additional_tariff_rate,actual_duty_cad,actual_broker_fee_cad,trade_agreement,origin_certificate_reference,approval_reference,shipment_reference
+E-SAMPLE-001,2026-09-15,Q3 2026,Germany,Guelph,Hydraulic cylinders,8412,500000.00,2.5,0,12500.00,1000.00,None,,APR-TRD-001,BOL-2026-001

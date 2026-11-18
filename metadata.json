@@ -1,0 +1,6 @@
+{
+  "name": "SKYJACK Cost Intelligence",
+  "description": "Enterprise cost intelligence, trade governance, and financial anomaly platform prototype for SKYJACK (Prompt to Pitch 2026).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

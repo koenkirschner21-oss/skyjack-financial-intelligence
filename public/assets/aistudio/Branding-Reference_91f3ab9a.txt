@@ -1,0 +1,5 @@
+SKYJACK branding reference — transcription of published 2018 colour guide, not the original asset.
+Red/orange #E53C2E; grey #7E8082; black #231F20.
+Proposed app tokens: background #F5F6F7; surfaces #FFFFFF; borders #E2E5E8; secondary text #5F6368; Inter (proposed).
+Use official logos if supplied; otherwise use a replaceable text placeholder.
+Source: https://www.skyjack.com/sites/default/files/media-library/skyjack_id_colours_2018_0.pdf

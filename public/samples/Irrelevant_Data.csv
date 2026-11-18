@@ -1,0 +1,9 @@
+badge_number,employee_shift,cafeteria_meal_plan,parking_lot_zone,locker_id,safety_boot_size
+EMP-1001,Day Shift,Plan A,North Lot B,L-012,10.5
+EMP-1002,Night Shift,Plan B,South Lot A,L-045,9.0
+EMP-1003,Day Shift,Plan A,East Lot C,L-088,11.0
+EMP-1004,Swing Shift,None,West Lot D,L-104,8.5
+EMP-1005,Day Shift,Plan C,North Lot A,L-119,10.0
+EMP-1006,Night Shift,Plan A,South Lot B,L-132,12.0
+EMP-1007,Day Shift,Plan B,East Lot A,L-147,9.5
+EMP-1008,Swing Shift,Plan A,North Lot C,L-165,10.5
