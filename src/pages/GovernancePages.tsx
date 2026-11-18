@@ -11,8 +11,8 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import { DATA_DISCREPANCIES, DEMO_USERS } from '../data/caseSeed';
-import { getRoleDefinition, PERMISSION_ROLES } from '../domain/permissions';
+import { DATA_DISCREPANCIES } from '../data/caseSeed';
+import { getRoleDefinition } from '../domain/permissions';
 import { runFinancialAcceptanceChecks } from '../domain/rulesEngine';
 import { AuditEvent } from '../types/domain';
 import { useApp } from '../context/AppContext';
@@ -648,7 +648,6 @@ export const AuditHistoryPage: React.FC = () => {
 export const SettingsAccessPage: React.FC = () => {
   const {
     activeUser,
-    switchRole,
     state,
     hasPermission,
     toggleBusinessRule,
@@ -869,7 +868,7 @@ export const SettingsAccessPage: React.FC = () => {
           <div>
             <h2 className="text-sm font-semibold text-[#231F20]">Workspace Management</h2>
             <p className="text-xs text-[#5F6368] mt-0.5">
-              Active employee session, temporary role switching, and workspace reset controls.
+              Signed-in session and workspace reset. Sign out before using another account.
             </p>
           </div>
 
@@ -917,36 +916,13 @@ export const SettingsAccessPage: React.FC = () => {
                 {activeUser.name} · {activeUser.title}
               </div>
               <div className="text-xs text-[#5F6368] mt-0.5">{activeRole.description}</div>
+              <div className="text-xs text-[#5F6368] mt-1">
+                Sign out from the profile menu before using another account.
+              </div>
             </div>
             <span className="text-[11px] text-[#5F6368] bg-white border border-[#E2E5E8] px-2.5 py-1 rounded self-start whitespace-nowrap">
               {activeUser.department}
             </span>
-          </div>
-
-          <div className="pt-3 border-t border-[#E2E5E8] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <span className="text-xs font-medium text-[#5F6368]">Switch Account:</span>
-            <div className="flex flex-wrap gap-1.5">
-              {DEMO_USERS.map((user) => {
-                const isCurrent = user.id === activeUser.id;
-                const role = PERMISSION_ROLES[user.roleId];
-                return (
-                  <button
-                    key={user.id}
-                    type="button"
-                    disabled={isCurrent}
-                    onClick={() => switchRole(user.roleId)}
-                    title={role.description}
-                    className={`px-2.5 py-1.5 text-xs rounded border transition-colors whitespace-nowrap ${
-                      isCurrent
-                        ? 'bg-[#231F20] text-white border-[#231F20] font-medium cursor-default'
-                        : 'bg-white text-[#231F20] border-[#E2E5E8] hover:bg-[#ECEEF0] cursor-pointer'
-                    }`}
-                  >
-                    {user.name} <span className={isCurrent ? 'text-[#C8CACC]' : 'text-[#5F6368]'}>· {role.label}</span>
-                  </button>
-                );
-              })}
-            </div>
           </div>
         </div>
 

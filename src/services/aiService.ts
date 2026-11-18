@@ -1,3 +1,4 @@
+import { readCurrentAccessToken } from '../lib/accessToken';
 import { PersistedWorkspaceState } from '../repositories/costIntelligenceRepo';
 import {
   buildGroundedContextPacket,
@@ -53,11 +54,13 @@ async function postAiJson<T extends { ok?: boolean; errorCode?: string; userMess
   const maxAttempts = 2;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
+      const accessToken = await readCurrentAccessToken();
       const res = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         },
         credentials: 'same-origin',
         signal,

@@ -4,6 +4,9 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
+import { buildGroundedContextPacket } from './src/domain/groundedQueryService.ts';
+import { buildInitialDemoState } from './src/repositories/costIntelligenceRepo.ts';
+import { isServerSupabaseConfigured, requireApiUser } from './src/server/supabaseAuth.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -214,11 +217,14 @@ async function startServer() {
       model: activeModel,
       fallbackModel: FALLBACK_MODEL_NAME,
       mode: client ? 'server_proxy_ready' : 'unavailable_no_key',
+      authConfigured: isServerSupabaseConfigured(),
     });
   });
 
   // 1. Ask SKYJACK Grounded Enterprise Query Endpoint
   app.post('/api/ai/ask', async (req, res) => {
+    const apiUser = await requireApiUser(req, res, 'view_overview');
+    if (!apiUser) return;
     const client = getGeminiClient();
     if (!client) {
       res.status(500).json({
@@ -231,10 +237,9 @@ async function startServer() {
     }
 
     try {
-      const { question, conversationHistory, groundedContext } = req.body as {
+      const { question, conversationHistory } = req.body as {
         question?: string;
         conversationHistory?: Array<{ role: 'user' | 'assistant'; text: string }>;
-        groundedContext?: Record<string, unknown>;
       };
 
       if (!question || typeof question !== 'string' || !question.trim()) {
@@ -250,6 +255,12 @@ async function startServer() {
         ? conversationHistory.slice(-6).map((h) => `${h.role.toUpperCase()}: ${String(h.text).slice(0, 400)}`).join('\n')
         : '';
 
+      const baseline = buildInitialDemoState();
+      const groundedContext = buildGroundedContextPacket(
+        question.trim(),
+        { ...baseline, activeRoleId: apiUser.roleId },
+        apiUser
+      );
       const prompt = [
         'USER QUESTION:',
         question.trim(),
@@ -257,7 +268,7 @@ async function startServer() {
         historySnippet ? `RECENT CONVERSATION CONTEXT:\n${historySnippet}\n` : '',
         'SCOPED REPOSITORY EVIDENCE (READ-ONLY; PRE-FILTERED BY ROLE PERMISSIONS):',
         '<UNTRUSTED_DATA_AND_CASE_FACTS>',
-        JSON.stringify(groundedContext ?? {}),
+        JSON.stringify(groundedContext),
         '</UNTRUSTED_DATA_AND_CASE_FACTS>',
       ].join('\n');
 
@@ -366,6 +377,8 @@ async function startServer() {
 
   // 2. AI Investigation Analysis Brief Endpoint
   app.post('/api/ai/investigate', async (req, res) => {
+    const apiUser = await requireApiUser(req, res, ['manage_investigations', 'manage_trade_investigations']);
+    if (!apiUser) return;
     const client = getGeminiClient();
     if (!client) {
       res.status(500).json({
@@ -460,6 +473,8 @@ async function startServer() {
 
   // 3. AI Quarter-End Close Briefing Endpoint
   app.post('/api/ai/quarter-end-briefing', async (req, res) => {
+    const apiUser = await requireApiUser(req, res, 'view_overview');
+    if (!apiUser) return;
     const client = getGeminiClient();
     if (!client) {
       res.status(500).json({
@@ -536,6 +551,8 @@ async function startServer() {
 
   // 4. Data Gateway AI Column Mapping & Anomaly Assistant (Advisory only; requires user confirmation)
   app.post('/api/ai/gateway-assist', async (req, res) => {
+    const apiUser = await requireApiUser(req, res, 'stage_data_upload');
+    if (!apiUser) return;
     const client = getGeminiClient();
     if (!client) {
       res.status(500).json({
@@ -625,6 +642,12 @@ async function startServer() {
 
   // 5. Evidence Intelligence (Multimodal PDF / Image Extraction; strictly unverified until human review)
   app.post('/api/ai/extract-evidence', async (req, res) => {
+    const apiUser = await requireApiUser(req, res, [
+      'manage_investigations',
+      'manage_trade_investigations',
+      'submit_correction_request',
+    ]);
+    if (!apiUser) return;
     const client = getGeminiClient();
     if (!client) {
       res.status(500).json({
@@ -733,6 +756,8 @@ async function startServer() {
 
   // 6. Report Studio AI Executive Summary Endpoint (Strict grounding; requires human review before export)
   app.post('/api/ai/report-summary', async (req, res) => {
+    const apiUser = await requireApiUser(req, res, 'generate_reports');
+    if (!apiUser) return;
     const client = getGeminiClient();
     if (!client) {
       res.status(500).json({

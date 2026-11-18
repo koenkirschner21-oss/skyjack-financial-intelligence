@@ -10,10 +10,12 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "check:opportunity-scope": "tsx src/domain/opportunityScopeChecks.ts"
+    "check:opportunity-scope": "tsx src/domain/opportunityScopeChecks.ts",
+    "check:auth-access": "tsx src/domain/authAccessChecks.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
+    "@supabase/supabase-js": "^2.119.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/d3-geo": "^3.1.1",
     "@types/papaparse": "^5.5.2",
