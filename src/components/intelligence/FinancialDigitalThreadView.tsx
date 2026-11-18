@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
@@ -60,13 +60,13 @@ const STAGE_DEFINITIONS: Array<{
   {
     lane: 1,
     stepNum: '01',
-    title: 'Source Event',
+    title: 'Source Events',
     subtitle: 'Originating cost, shipment, or upload',
   },
   {
     lane: 2,
     stepNum: '02',
-    title: 'Ledger / Shipment',
+    title: 'Ledger & Shipment',
     subtitle: 'Posting, walk bucket, duty, or batch',
   },
   {
@@ -99,7 +99,17 @@ export const FinancialDigitalThreadView: React.FC<FinancialDigitalThreadViewProp
   const { state, activeUser, openRecordById, navigate, formatMoney } = useApp();
   const [mode, setMode] = useState<'graph' | 'timeline'>('graph');
   const [focusedLane, setFocusedLane] = useState<1 | 2 | 3 | 4 | 'all'>('all');
-  const [collapsedLanes, setCollapsedLanes] = useState<Record<number, boolean>>({});
+  const [collapsedLanes, setCollapsedLanes] = useState<Record<number, boolean>>({
+    1: true,
+    2: true,
+    3: true,
+    4: true,
+  });
+
+  useEffect(() => {
+    setCollapsedLanes({ 1: true, 2: true, 3: true, 4: true });
+    setFocusedLane('all');
+  }, [recordId]);
 
   const thread = useMemo(
     () => buildFinancialDigitalThread(recordId, state, activeUser, state.currency),
@@ -187,7 +197,7 @@ export const FinancialDigitalThreadView: React.FC<FinancialDigitalThreadViewProp
             }`}
           >
             <Clock className="w-3 h-3" />
-            <span>Chronological ({thread.timeline.length})</span>
+            <span>Chronological</span>
           </button>
         </div>
       </div>
@@ -289,8 +299,11 @@ export const FinancialDigitalThreadView: React.FC<FinancialDigitalThreadViewProp
                   <div className="border border-[#E2E5E8] rounded-md bg-white overflow-hidden">
                     <button
                       type="button"
+                      aria-expanded={!isCollapsed}
                       onClick={() => toggleLaneCollapse(stage.lane)}
-                      className="w-full px-3.5 py-2.5 bg-[#F8F9FA] border-b border-[#E2E5E8] flex flex-wrap items-center justify-between gap-2 text-left hover:bg-[#F0F1F3] transition-colors cursor-pointer"
+                      className={`w-full px-3.5 py-2.5 bg-[#F8F9FA] flex flex-wrap items-center justify-between gap-2 text-left hover:bg-[#F0F1F3] transition-colors cursor-pointer ${
+                        isCollapsed ? '' : 'border-b border-[#E2E5E8]'
+                      }`}
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         {isCollapsed ? (
@@ -421,6 +434,9 @@ export const FinancialDigitalThreadView: React.FC<FinancialDigitalThreadViewProp
       {/* Mode B: Chronological Event Timeline */}
       {mode === 'timeline' && (
         <div className="border border-[#E2E5E8] rounded-md bg-white divide-y divide-[#E2E5E8]">
+          <div className="px-3.5 py-2 text-[11px] text-[#5F6368] bg-[#F8F9FA]">
+            {thread.timeline.length} recorded {thread.timeline.length === 1 ? 'event' : 'events'}
+          </div>
           {thread.timeline.map((ev) => {
             const meta = LINK_NATURE_META[ev.linkNature];
             return (
