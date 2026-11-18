@@ -446,6 +446,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                   setCurrencyNoticeOpen(false);
                   setProfileMenuOpen(false);
                 }}
+                aria-label="Ask SKYJACK"
                 className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-[#231F20] bg-[#F5F6F7] hover:bg-[#ECEEF0] border border-[#E2E5E8] rounded-md transition-colors whitespace-nowrap cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E53C2E]"
               >
                 <MessageSquare className="w-3.5 h-3.5 text-[#E53C2E]" />
